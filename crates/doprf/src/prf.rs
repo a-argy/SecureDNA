@@ -3,8 +3,9 @@
 
 // added packages
 use serde_json;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::BufWriter;
+use std::path::Path;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -201,6 +202,7 @@ impl QueryStateSet {
         required_keyholders: usize,
         active_security_key: ActiveSecurityKey,
     ) -> Self {
+        println!("from_iter print");
         let randomized_target = active_security_key.randomized_target();
 
         let iter = iter.into_iter();
@@ -230,8 +232,21 @@ impl QueryStateSet {
             unhashed_values.push(hex::encode(b.as_ref()));
         }
         
+        // define the output directory
+        let output_dir = Path::new("output");
+
+        // ensure the output directory exists
+        if !output_dir.exists() {
+            fs::create_dir_all(&output_dir).expect("Failed to create output directory");
+        }
+
+        // create the full path to the output file
+        let output_file_path = output_dir.join("unhashed_values.json");
+
+        // create the file at the specified path
+        let file = File::create(&output_file_path).expect("Failed to create file");
+        
         // write the vector contents to a file
-        let file = File::create("unhashed_values.json").expect("Failed to create file");
         serde_json::to_writer(BufWriter::new(file), &unhashed_values).expect("Failed to write JSON");
 
         let checksum = randomized_target.get_checksum_point_for_validation(&sum);

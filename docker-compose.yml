@@ -14,14 +14,15 @@ services:
       - keyserver1
       - keyserver2
       - keyserver3
+    working_dir: /client
     command: [
       "./synthclient",
     ]
     volumes:
       - "${TEST_CERTS_PATH:-./test/certs}:/certs/"
       - "${TEST_CFG_PATH:-./test/cfg}:/cfg/"
-    # - "./target/release/synthclient:/client/synthclient" # indended to mount locally built binary into Docker
-      - "./docker_client_output:/client" # json file is made visible outside of Docker
+      - "./target/release/synthclient:/client/synthclient"
+      - "./client_output:/client/output"
     environment:
       "SECUREDNA_CFG_PATH": "/cfg/synthesizer.toml"
   hdbserver:
