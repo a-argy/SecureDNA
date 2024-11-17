@@ -1,6 +1,11 @@
 // Copyright 2021-2024 SecureDNA Stiftung (SecureDNA Foundation) <licensing@securedna.org>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+// added packages
+use serde_json;
+use std::fs::File;
+use std::io::BufWriter;
+
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -227,7 +232,7 @@ impl QueryStateSet {
         
         // write the vector contents to a file
         let file = File::create("unhashed_values.json").expect("Failed to create file");
-        serde_json::to_writer(BufWriter::new(file), &hashed_values).expect("Failed to write JSON");
+        serde_json::to_writer(BufWriter::new(file), &unhashed_values).expect("Failed to write JSON");
 
         let checksum = randomized_target.get_checksum_point_for_validation(&sum);
         let verification_factor_0 = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
