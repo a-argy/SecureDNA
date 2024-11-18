@@ -12,10 +12,14 @@ wasm = ["getrandom/wasm-bindgen"]
 
 [dependencies]
 # added dependencies
-serde_json = "1.0"
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+# SP1 'script dependencies'
+sp1-sdk = "3.0.0"
+tracing = "0.1.40"
+
 base64 = "0.22.0"
 base64_helper = { path = "../base64_helper" }
-clap = { version = "4.5.0", features = ["derive"] }
+clap = { version = "4.5.0", features = ["derive", "env"] }
 curve25519-dalek = {workspace = true, features = ["digest", "rand_core"]}
 hex = "0.4"
 rand = "0.8.5"
@@ -23,6 +27,11 @@ rasn = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sha3 = "0.10.8"
 subtle = "2.6.0"
+
+# added build dependencies
+[build-dependencies]
+sp1-helper = "3.0.0"
+sp1-build = "3.0.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = "0.2"

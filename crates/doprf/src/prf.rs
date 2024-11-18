@@ -1,11 +1,16 @@
 // Copyright 2021-2024 SecureDNA Stiftung (SecureDNA Foundation) <licensing@securedna.org>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-// added packages
+// added packages for file write
 use serde_json;
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{self, Read, BufWriter};
 use std::path::Path;
+
+// added packages for SP1 'Script'
+use std::env;
+use clap::Parser;
+use sp1_sdk::{include_elf, utils, ProverClient, SP1Stdin, SP1ProofWithPublicValues};
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -202,10 +207,32 @@ impl QueryStateSet {
         required_keyholders: usize,
         active_security_key: ActiveSecurityKey,
     ) -> Self {
-        println!("from_iter print");
+        
+        // The ELF we want to execute inside the zkVM.
+        const ELF: &[u8] = include_bytes!("../../../hash_proof/elf/riscv32im-succinct-zkvm-elf");
+
+        // Setup SP1 logging
+        utils::setup_logger();
+
+        // The input stream that the program will read from using `sp1_zkvm::io::read`. Note that the
+        // types of the elements in the input stream must match the types being read in the program.
+        let mut stdin = SP1Stdin::new();
+
         let randomized_target = active_security_key.randomized_target();
 
         let iter = iter.into_iter();
+
+        // convert iterator into byte array
+        //let byte_arrays: Vec<_> = iter.map(|(_, b)| b.as_ref().to_vec()).collect();
+
+        // Write the number of byte arrays to the SP1 stdin
+        //stdin.write(&(byte_arrays.len() as usize));
+
+        // Write each byte array to the SP1 stdin
+        //for bytes in &byte_arrays {
+        //    stdin.write(bytes);
+        //}
+
         let estimated_size = iter.size_hint().0 + 1;
         let mut querystates = Vec::with_capacity(estimated_size);
         let mut sum = RistrettoPoint::identity();
@@ -213,10 +240,19 @@ impl QueryStateSet {
         let verification_factor_max = 2u32.pow(SECURITY_PARAMETER);
         let mut rng = OsRng;
 
-        // initialize vector for byte writes
-        let mut unhashed_values = Vec::new();
+        // initialize vector for byte writes (not needed anymore)
+        //let mut unhashed_values = Vec::new();
+        
+        let mut byte_count = 0;
 
         for (tag, b) in iter {
+            // Increment the byte count for size hint
+            byte_count += 1;
+                
+            // Convert byte slice to Vec<u8> and write to stdin
+            let bytes = b.as_ref().to_vec();
+            stdin.write(&bytes);
+
             let point = RistrettoPoint::hash_from_bytes::<Sha3_512>(b.as_ref());
             let verification_factor = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
             // We need variable time scalar * point multiplication; this is the fastest option provided by curve25519-dalek
@@ -229,25 +265,40 @@ impl QueryStateSet {
             querystates.push((Some(tag), state));
 
             // add bytes on each iteration
-            unhashed_values.push(hex::encode(b.as_ref()));
+            //unhashed_values.push(b.as_ref().to_vec());
         }
+
+        // Write the total number of byte arrays to stdin
+        stdin.write(&byte_count);
         
         // define the output directory
-        let output_dir = Path::new("output");
+        //let output_dir = Path::new("output");
 
-        // ensure the output directory exists
-        if !output_dir.exists() {
-            fs::create_dir_all(&output_dir).expect("Failed to create output directory");
-        }
+        // ensure the output directory exists (not needed anymore)
+        //if !output_dir.exists() {
+        //    fs::create_dir_all(&output_dir).expect("Failed to create output directory");
+        //}
 
-        // create the full path to the output file
-        let output_file_path = output_dir.join("unhashed_values.json");
+        // create the full path to the output file (not needed anymore)
+        //let output_file_path = output_dir.join("unhashed_values.json");
 
-        // create the file at the specified path
-        let file = File::create(&output_file_path).expect("Failed to create file");
+        // create the file at the specified path (not needed anymore)
+        //let file = File::create(&output_file_path).expect("Failed to create file");
         
-        // write the vector contents to a file
-        serde_json::to_writer(BufWriter::new(file), &unhashed_values).expect("Failed to write JSON");
+        // write the vector contents to a file (not needed anymore)
+        //serde_json::to_writer(BufWriter::new(file), &unhashed_values).expect("Failed to write JSON");
+
+        // Create a `ProverClient` method.
+        let client = ProverClient::new();
+
+        // Execute the program using the `ProverClient.execute` method, without generating a proof.
+        let (_, report) = client.execute(ELF, stdin.clone()).run().unwrap();
+        println!("executed program with {} cycles", report.total_instruction_count());
+
+        // Generate the proof for the given program and input.
+        let (pk, vk) = client.setup(ELF);
+        let mut proof = client.prove(&pk, stdin).run().unwrap();
+        println!("generated proof");
 
         let checksum = randomized_target.get_checksum_point_for_validation(&sum);
         let verification_factor_0 = Scalar::from(rng.gen_range(0u32..=verification_factor_max));

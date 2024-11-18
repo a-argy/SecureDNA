@@ -4,6 +4,8 @@ members = [
     "crates/wasm_bindings/certificates",
     "crates/wasm_bindings/quickdna",
     "crates/wasm_bindings/screening",
+    "hash_proof/program",
+    "hash_proof/script"
 ]
 resolver = "2"
 
@@ -24,6 +26,7 @@ serde = "1.0"
 tempfile = "3.6.0"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+alloy-sol-types = "0.7.7"
 
 [profile.release-with-debug]
 inherits = "release"
