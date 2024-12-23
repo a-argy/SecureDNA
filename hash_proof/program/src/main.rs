@@ -11,18 +11,20 @@ use alloy_sol_types::SolType;
 use fibonacci_lib::{fibonacci, PublicValuesStruct};
 
 pub fn main() {
-    // Read the number of byte arrays.
-    let num_arrays = sp1_zkvm::io::read::<usize>();
-
     // Process and commit each byte array.
-    for _ in 0..num_arrays {
+    loop {
         // Read a single byte array from the input.
         let bytes = sp1_zkvm::io::read::<Vec<u8>>();
-
+        // Check for the sentinel. If it's empty, break the loop.
+        if bytes.is_empty() {
+            break;
+        }
         // Hash the byte array directly to a RistrettoPoint.
         let hashed_point = RistrettoPoint::hash_from_bytes::<Sha3_512>(&bytes);
-
         // Commit the compressed hash to the zkVM for public verification.
         sp1_zkvm::io::commit_slice(hashed_point.compress().as_bytes());
     }
+    // Define the sentinel value
+    let sentinel: [u8; 32] = [0u8; 32];
+    sp1_zkvm::io::commit_slice(&sentinel);
 }
