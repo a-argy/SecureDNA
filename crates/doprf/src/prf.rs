@@ -223,10 +223,15 @@ impl QueryStateSet {
         let verification_factor_max = 2u32.pow(SECURITY_PARAMETER);
         let mut rng = OsRng;
 
+        let mut pre_proof_hashes = Vec::with_capacity(estimated_size);
+
         for (tag, b) in iter {
             let byte_vec = b.as_ref().to_vec();
             stdin.write(&byte_vec);
             let point = RistrettoPoint::hash_from_bytes::<Sha3_512>(b.as_ref());
+
+            pre_proof_hashes.push(point.compress().to_bytes());
+
             let verification_factor = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
             // We need variable time scalar * point multiplication; this is the fastest option provided by curve25519-dalek
             sum += RistrettoPoint::vartime_double_scalar_mul_basepoint(
@@ -253,7 +258,7 @@ impl QueryStateSet {
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
 
-        // Define the sentinel value
+        let mut proof_hashes = Vec::with_capacity(estimated_size);
         let sentinel: [u8; 32] = [0u8; 32];
 
         loop {
@@ -263,6 +268,13 @@ impl QueryStateSet {
                 println!("Sentinel value reached, breaking loop");
                 break;
             }
+            proof_hashes.push(read_val)
+        }
+
+        if proof_hashes == pre_proof_hashes {
+            println!("vectors are the same");
+        } else {
+            println!("vectors are different");
         }
 
         let checksum = randomized_target.get_checksum_point_for_validation(&sum);
