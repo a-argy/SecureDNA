@@ -233,6 +233,8 @@ impl QueryStateSet {
             pre_proof_hashes.push(point.compress().to_bytes());
 
             let verification_factor = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
+            stdin.write(&verification_factor.as_bytes());
+            
             // We need variable time scalar * point multiplication; this is the fastest option provided by curve25519-dalek
             sum += RistrettoPoint::vartime_double_scalar_mul_basepoint(
                 &verification_factor,

@@ -15,10 +15,15 @@ pub fn main() {
     loop {
         // Read a single byte array from the input.
         let bytes = sp1_zkvm::io::read::<Vec<u8>>();
+
         // Check for the sentinel. If it's empty, break the loop.
         if bytes.is_empty() {
             break;
         }
+
+        let verification_factor = sp1_zkvm::io::read::<u8>();
+        println!("Verification factor: {}", verification_factor);
+
         // Hash the byte array directly to a RistrettoPoint.
         let hashed_point = RistrettoPoint::hash_from_bytes::<Sha3_512>(&bytes);
         // Commit the compressed hash to the zkVM for public verification.
