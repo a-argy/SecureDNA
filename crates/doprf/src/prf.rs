@@ -10,6 +10,7 @@ use std::path::Path;
 // added packages for SP1 'Script'
 use std::env;
 use clap::Parser;
+#[cfg(feature = "sp1")]
 use sp1_sdk::{include_elf, utils, ProverClient, SP1Stdin, SP1ProofWithPublicValues};
 
 use std::collections::BTreeMap;
@@ -39,13 +40,18 @@ use crate::tagged::{HashTag, TaggedHash};
 /// A value of 18 entails a 2.5% performance reduction.
 pub const SECURITY_PARAMETER: u32 = 18;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Query(CompressedRistretto);
 
 impl Query {
     #[cfg(feature = "centralized_keygen")]
     pub fn hash_from_string(seq: &str) -> Self {
         Self(RistrettoPoint::hash_from_bytes::<Sha3_512>(seq.as_bytes()).compress())
+    }
+
+    // added line for sentinel val
+    pub fn sentinel() -> Self {
+        Query(CompressedRistretto::default())
     }
 }
 
@@ -202,6 +208,7 @@ pub struct QueryStateSet {
 }
 
 impl QueryStateSet {
+    #[cfg(feature = "sp1")]
     pub fn from_iter(
         iter: impl IntoIterator<Item = (HashTag, impl AsRef<[u8]>)>,
         required_keyholders: usize,
@@ -225,15 +232,18 @@ impl QueryStateSet {
 
         let mut pre_proof_hashes = Vec::with_capacity(estimated_size);
 
+        // // write num of keyholders
+        // stdin.write(&required_keyholders);
+
         for (tag, b) in iter {
             let byte_vec = b.as_ref().to_vec();
             stdin.write(&byte_vec);
-            let point = RistrettoPoint::hash_from_bytes::<Sha3_512>(b.as_ref());
 
+            let point = RistrettoPoint::hash_from_bytes::<Sha3_512>(b.as_ref());
             pre_proof_hashes.push(point.compress().to_bytes());
 
             let verification_factor = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
-            stdin.write(&verification_factor.as_bytes());
+            // stdin.write(&verification_factor.as_bytes());
             
             // We need variable time scalar * point multiplication; this is the fastest option provided by curve25519-dalek
             sum += RistrettoPoint::vartime_double_scalar_mul_basepoint(
@@ -242,6 +252,10 @@ impl QueryStateSet {
                 &Scalar::ZERO,
             );
             let state = QueryState::from_rp(point, required_keyholders, verification_factor);
+            let blinding_factor = state.blinding_factor;
+
+            stdin.write(&blinding_factor.as_bytes());
+
             querystates.push((Some(tag), state));
         }
 
@@ -261,10 +275,10 @@ impl QueryStateSet {
         );
 
         let mut proof_hashes = Vec::with_capacity(estimated_size);
-        let sentinel: [u8; 32] = [0u8; 32];
+        let sentinel = Query::sentinel();;
 
         loop {
-            let read_val = public_values.read::<[u8; 32]>();
+            let read_val = public_values.read::<Query>();
             println!("{:?}", read_val);
             if read_val == sentinel {
                 println!("Sentinel value reached, breaking loop");
@@ -273,11 +287,19 @@ impl QueryStateSet {
             proof_hashes.push(read_val)
         }
 
-        if proof_hashes == pre_proof_hashes {
+        //Extract states from querystates
+        let querystates_only: Vec<Query> = querystates.iter().map(|(_, state)| state.query.clone()).collect();
+
+
+        // Print the vectors
+        println!("proof_hashes: {:?}", proof_hashes);
+        println!("querystates_only: {:?}", querystates_only);
+
+        if proof_hashes == querystates_only {
             println!("vectors are the same");
         } else {
             println!("vectors are different");
-        }
+        }   
 
         let checksum = randomized_target.get_checksum_point_for_validation(&sum);
         let verification_factor_0 = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
