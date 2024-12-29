@@ -41,7 +41,7 @@ tracing = { workspace = true }
 uuid = { version = "1.10.0", features = ["v4"] }
 
 certificates = { path = "../certificates" }
-doprf = { path = "../doprf", features = ["sp1"] }
+doprf = { path = "../doprf" }
 doprf_client = { path = "../doprf_client" }
 http_client = { path = "../http_client" }
 pipeline_bridge = { path = "../pipeline_bridge" }

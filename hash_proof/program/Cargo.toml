@@ -9,4 +9,6 @@ curve25519-dalek = {workspace = true, features = ["digest", "rand_core"]}
 alloy-sol-types = { workspace = true }
 sp1-zkvm = "3.0.0-rc4"
 fibonacci-lib = { path = "../lib" }
+# need to access doprf for the Query datatype
+# do not import the features to prevent error associated with sp1-sdk
 doprf = { path = "../../crates/doprf", default-features = false }

@@ -10,7 +10,7 @@ use std::path::Path;
 // added packages for SP1 'Script'
 use std::env;
 use clap::Parser;
-#[cfg(feature = "sp1")]
+// #[cfg(feature = "sp1")]
 use sp1_sdk::{include_elf, utils, ProverClient, SP1Stdin, SP1ProofWithPublicValues};
 
 use std::collections::BTreeMap;
@@ -49,7 +49,7 @@ impl Query {
         Self(RistrettoPoint::hash_from_bytes::<Sha3_512>(seq.as_bytes()).compress())
     }
 
-    // added line for sentinel val
+    // Added Query method for sential value to be used in SP1
     pub fn sentinel() -> Self {
         Query(CompressedRistretto::default())
     }
@@ -208,13 +208,13 @@ pub struct QueryStateSet {
 }
 
 impl QueryStateSet {
-    #[cfg(feature = "sp1")]
+    // #[cfg(feature = "sp1")]
     pub fn from_iter(
         iter: impl IntoIterator<Item = (HashTag, impl AsRef<[u8]>)>,
         required_keyholders: usize,
         active_security_key: ActiveSecurityKey,
     ) -> Self {
-        // The ELF we want to execute inside the zkVM.
+        // The ELF we want to execute inside the zkVM, ensure it's up to date (auto-build disabled)
         const ELF: &[u8] = include_bytes!("../../../hash_proof/elf/riscv32im-succinct-zkvm-elf");
 
         // The input stream that the program will read from using `sp1_zkvm::io::read`. Note that the
@@ -230,21 +230,14 @@ impl QueryStateSet {
         let verification_factor_max = 2u32.pow(SECURITY_PARAMETER);
         let mut rng = OsRng;
 
-        let mut pre_proof_hashes = Vec::with_capacity(estimated_size);
-
-        // // write num of keyholders
-        // stdin.write(&required_keyholders);
-
         for (tag, b) in iter {
             let byte_vec = b.as_ref().to_vec();
+            // Write these bytes to the input stream
             stdin.write(&byte_vec);
 
             let point = RistrettoPoint::hash_from_bytes::<Sha3_512>(b.as_ref());
-            pre_proof_hashes.push(point.compress().to_bytes());
-
             let verification_factor = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
-            // stdin.write(&verification_factor.as_bytes());
-            
+
             // We need variable time scalar * point multiplication; this is the fastest option provided by curve25519-dalek
             sum += RistrettoPoint::vartime_double_scalar_mul_basepoint(
                 &verification_factor,
@@ -252,53 +245,48 @@ impl QueryStateSet {
                 &Scalar::ZERO,
             );
             let state = QueryState::from_rp(point, required_keyholders, verification_factor);
+            
+            // Retrieve the random blinding factor generated in from_rp, conver to 
+            // a serializable type and write it
             let blinding_factor = state.blinding_factor;
-
             stdin.write(&blinding_factor.as_bytes());
 
             querystates.push((Some(tag), state));
         }
 
         // After writing all byte arrays, write a sentinel value.
-        // For example, an empty vector (or a special string) to mark the end.
-        let sentinel: Vec<u8> = Vec::new(); // Use empty vector as sentinel
+        let sentinel: Vec<u8> = Vec::new();
         stdin.write(&sentinel);
 
         // Create a `ProverClient` method.
         let client = ProverClient::new();
 
-        // Execute the program using the `ProverClient.execute` method, without generating a proof.
+        // Execute the program using the `ProverClient.execute` method, without generating a proof
         let (mut public_values, execution_report) = client.execute(ELF, stdin.clone()).run().unwrap();
         println!(
             "Executed program with {} cycles",
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
 
+        // Read the proof hashes from the output stream until sentinel value is reached
         let mut proof_hashes = Vec::with_capacity(estimated_size);
         let sentinel = Query::sentinel();;
 
         loop {
             let read_val = public_values.read::<Query>();
-            println!("{:?}", read_val);
             if read_val == sentinel {
-                println!("Sentinel value reached, breaking loop");
                 break;
             }
             proof_hashes.push(read_val)
         }
 
-        //Extract states from querystates
-        let querystates_only: Vec<Query> = querystates.iter().map(|(_, state)| state.query.clone()).collect();
+        //Extract only queries from querystatess states
+        let queries: Vec<Query> = querystates.iter().map(|(_, state)| state.query.clone()).collect();
 
-
-        // Print the vectors
-        println!("proof_hashes: {:?}", proof_hashes);
-        println!("querystates_only: {:?}", querystates_only);
-
-        if proof_hashes == querystates_only {
-            println!("vectors are the same");
+        if proof_hashes == queries {
+            println!("hashes match");
         } else {
-            println!("vectors are different");
+            println!("hashes conflict");
         }   
 
         let checksum = randomized_target.get_checksum_point_for_validation(&sum);
