@@ -273,10 +273,10 @@ impl QueryStateSet {
             println!("Syscall {code:?} was called {count} times");
         }
 
-        // // Generate the proof for the given program and input.
-        // let (pk, vk) = client.setup(ELF);
-        // let mut proof = client.prove(&pk, stdin).run().unwrap();
-        // println!("generated proof");
+        // Generate the proof for the given program and input.
+        let (pk, vk) = client.setup(ELF);
+        let mut proof = client.prove(&pk, stdin).run().unwrap();
+        println!("generated proof");
 
         // Read the proof hashes from the output stream until sentinel value is reached
         let mut proof_quries = Vec::with_capacity(estimated_size);
@@ -306,18 +306,18 @@ impl QueryStateSet {
 
         querystates.push((None, checksum_state));
 
-        // // Verify proof and public values
-        // client.verify(&proof, &vk).expect("verification failed");
+        // Verify proof and public values
+        client.verify(&proof, &vk).expect("verification failed");
 
-        // // Test a round trip of proof serialization and deserialization.
-        // proof.save("proof-with-pis.bin").expect("saving proof failed");
-        // let deserialized_proof =
-        //     SP1ProofWithPublicValues::load("proof-with-pis.bin").expect("loading proof failed");
+        // Test a round trip of proof serialization and deserialization.
+        proof.save("proof-with-pis.bin").expect("saving proof failed");
+        let deserialized_proof =
+            SP1ProofWithPublicValues::load("proof-with-pis.bin").expect("loading proof failed");
 
-        // // Verify the deserialized proof.
-        // client.verify(&deserialized_proof, &vk).expect("verification failed");
+        // Verify the deserialized proof.
+        client.verify(&deserialized_proof, &vk).expect("verification failed");
 
-        // println!("successfully generated and verified proof for the program!");
+        println!("successfully generated and verified proof for the program!");
 
         Self {
             querystates,
