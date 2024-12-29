@@ -10,7 +10,7 @@ use std::path::Path;
 // added packages for SP1 'Script'
 use std::env;
 use clap::Parser;
-// #[cfg(feature = "sp1")]
+#[cfg(feature = "sp1")]
 use sp1_sdk::{include_elf, utils, ProverClient, SP1Stdin, SP1ProofWithPublicValues};
 
 use std::collections::BTreeMap;
@@ -208,7 +208,7 @@ pub struct QueryStateSet {
 }
 
 impl QueryStateSet {
-    // #[cfg(feature = "sp1")]
+    #[cfg(feature = "sp1")]
     pub fn from_iter(
         iter: impl IntoIterator<Item = (HashTag, impl AsRef<[u8]>)>,
         required_keyholders: usize,
@@ -268,22 +268,32 @@ impl QueryStateSet {
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
 
+        // Determine if the program is using the precompiles
+        for (code, count) in &(*execution_report.syscall_counts) {
+            println!("Syscall {code:?} was called {count} times");
+        }
+
+        // // Generate the proof for the given program and input.
+        // let (pk, vk) = client.setup(ELF);
+        // let mut proof = client.prove(&pk, stdin).run().unwrap();
+        // println!("generated proof");
+
         // Read the proof hashes from the output stream until sentinel value is reached
-        let mut proof_hashes = Vec::with_capacity(estimated_size);
-        let sentinel = Query::sentinel();;
+        let mut proof_quries = Vec::with_capacity(estimated_size);
+        let sentinel = Query::sentinel();
 
         loop {
             let read_val = public_values.read::<Query>();
             if read_val == sentinel {
                 break;
             }
-            proof_hashes.push(read_val)
+            proof_quries.push(read_val)
         }
 
         //Extract only queries from querystatess states
         let queries: Vec<Query> = querystates.iter().map(|(_, state)| state.query.clone()).collect();
 
-        if proof_hashes == queries {
+        if proof_quries == queries {
             println!("hashes match");
         } else {
             println!("hashes conflict");
@@ -295,6 +305,19 @@ impl QueryStateSet {
         let checksum_state = QueryState::from_rp(x_0, required_keyholders, verification_factor_0);
 
         querystates.push((None, checksum_state));
+
+        // // Verify proof and public values
+        // client.verify(&proof, &vk).expect("verification failed");
+
+        // // Test a round trip of proof serialization and deserialization.
+        // proof.save("proof-with-pis.bin").expect("saving proof failed");
+        // let deserialized_proof =
+        //     SP1ProofWithPublicValues::load("proof-with-pis.bin").expect("loading proof failed");
+
+        // // Verify the deserialized proof.
+        // client.verify(&deserialized_proof, &vk).expect("verification failed");
+
+        // println!("successfully generated and verified proof for the program!");
 
         Self {
             querystates,
