@@ -54,8 +54,7 @@ impl ActiveSecurityKey {
     }
 
     /// To validate the keyserver responses we create a target unknown to the keyservers.
-    pub fn randomized_target(&self) -> RandomizedTarget {
-        let random_modifier = Scalar::random(&mut OsRng);
+    pub fn randomized_target(&self, random_modifier: Scalar) -> RandomizedTarget {
         let target = Target(self.0[0] * random_modifier);
 
         RandomizedTarget {
