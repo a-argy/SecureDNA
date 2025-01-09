@@ -10,6 +10,8 @@ default = ["centralized_keygen"]
 centralized_keygen = []
 
 [dependencies]
+# SP1 'script dependencies'
+sp1-sdk = { version = "3.0.0" }
 again = { workspace = true }
 async-trait = "0.1.73"
 bytes = "1"
@@ -73,3 +75,8 @@ quickdna = { workspace = true, default-features = false, features = [
 ] }
 tracing.workspace = true
 tracing-subscriber = "0.3.18"
+
+# added build dependencies
+[build-dependencies]
+sp1-helper = "3.0.0"
+sp1-build = "3.0.0"

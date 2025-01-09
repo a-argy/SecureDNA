@@ -6,7 +6,7 @@ use crate::instant::get_now;
 use crate::progress::report_progress;
 use doprf::active_security::ActiveSecurityKey;
 use doprf::party::KeyserverId;
-use doprf::prf::{HashPart, QueryStateSet};
+use doprf::prf::{HashPart, QueryStateSet, VerificationInput};
 use doprf::tagged::{HashTag, TaggedHash};
 use packed_ristretto::{PackableRistretto, PackedRistrettos};
 
@@ -54,7 +54,7 @@ pub fn make_keyserver_querysets(
     sequences: &[(HashTag, impl AsRef<str> + Sync)],
     num_required_keyshares: usize,
     target: &ActiveSecurityKey,
-) -> QueryStateSet {
+) -> (QueryStateSet, Vec<VerificationInput>) {
     let now = get_now();
 
     assert!(!sequences.is_empty());
@@ -62,7 +62,7 @@ pub fn make_keyserver_querysets(
     report_progress(request_ctx);
 
     // initial querystateset of hashes, blinds keyservers from seeing original sequences
-    let querystates = QueryStateSet::from_iter(
+    let (querystates, verification_inputs)  = QueryStateSet::from_iter(
         sequences.iter().map(|(t, w)| (*t, w.as_ref().as_bytes())),
         num_required_keyshares,
         target.clone(),
@@ -72,7 +72,7 @@ pub fn make_keyserver_querysets(
 
     let setup_duration = now.elapsed();
     debug!("Setting up done. Took: {:.2?}", setup_duration);
-    querystates
+    (querystates, verification_inputs)
 }
 
 /// Given a QueryStateSet, and a Vec of keyserver responses,

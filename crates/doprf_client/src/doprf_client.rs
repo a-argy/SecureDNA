@@ -26,6 +26,10 @@ use shared_types::requests::RequestContext;
 use shared_types::requests::RequestId;
 use shared_types::synthesis_permission::Region;
 use tracing::{debug, info};
+use sp1_sdk::{
+    include_elf, HashableKey, ProverClient, SP1Proof, SP1ProofWithPublicValues, SP1Stdin,
+    SP1VerifyingKey,
+};
 
 pub struct DoprfConfig<'a, S> {
     pub api_client: &'a BaseApiClient,
@@ -290,7 +294,7 @@ impl<'a, S> DoprfClient<'a, S> {
             .checked_add(1)
             .ok_or(DoprfError::SequencesTooBig)?;
 
-        let querystate = make_keyserver_querysets(
+        let (querystate, inputs) = make_keyserver_querysets(
             self.config.request_ctx,
             &windows.combined_windows,
             self.keyserver_threshold as usize,
@@ -305,6 +309,57 @@ impl<'a, S> DoprfClient<'a, S> {
         let keyserver_responses = ks.query(hash_total_count, &querystate_ristrettos).await?;
         let querying_duration = now.elapsed();
         debug!("Querying key servers done. Took: {:.2?}", querying_duration);
+
+        const VERIFICATION_ELF: &[u8] = include_bytes!("../../../verification_proof/elf/riscv32im-succinct-zkvm-elf");
+
+        // Initialize the proving client.
+        let client = ProverClient::new();
+        // Setup the proving and verifying keys.
+        let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
+
+        let mut stdin = SP1Stdin::new();
+
+        // Write the verification keys.
+        let vkeys = inputs.iter().map(|input| input.vk.hash_u32()).collect::<Vec<_>>();
+        stdin.write::<Vec<[u32; 8]>>(&vkeys);
+
+        // Write the public values.
+        let public_values_write =
+            inputs.iter().map(|input| input.proof.public_values.to_vec()).collect::<Vec<_>>();
+        stdin.write::<Vec<Vec<u8>>>(&public_values_write);
+
+        // Write the proofs.
+        //
+        // Note: this data will not actually be read by the aggregation program, instead it will be
+        // witnessed by the prover during the recursive aggregation process inside SP1 itself.
+        for input in inputs {
+            let SP1Proof::Compressed(proof) = input.proof.proof else { panic!() };
+            stdin.write_proof(*proof, input.vk.vk);
+        }
+
+        // FOR DEBUGGING: Execute the verification_proof program using the `ProverClient.execute` method,
+        let (mut public_values, execution_report) = client.execute(VERIFICATION_ELF, stdin.clone()).run().unwrap();
+        println!(
+            "Verification program executed with {} cycles",
+            execution_report.total_instruction_count() + execution_report.total_syscall_count()
+        );
+
+        // // PROOF GENERATION: Generate the proof for the given program and input
+        // let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
+        // let mut verification_proof = client.prove(&verification_pk, stdin).run().unwrap();
+        // println!("generated proof");
+
+        // // Verify proof and public values
+        // client.verify(&verification_proof, &verification_vk).expect("verification failed");
+
+        // // Test a round trip of proof serialization and deserialization.
+        // verification_proof.save("/client/output/verification_proof-with-pis.bin").expect("saving proof failed");
+        // let deserialized_verification_proof =
+        //     SP1ProofWithPublicValues::load("/client/output/verification_proof-with-pis.bin").expect("loading proof failed");
+
+        // // Verify the deserialized proof.
+        // client.verify(&deserialized_verification_proof, &verification_vk).expect("verification failed");
+        // println!("successfully generated and verified hash proof for the program!");
 
         incorporate_responses_and_hash(self.config.request_ctx, querystate, keyserver_responses)
             .await
