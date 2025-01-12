@@ -3,6 +3,7 @@
 
 use std::fmt;
 use std::str::FromStr;
+use serde::{Deserialize, Serialize};
 
 use uuid::Uuid;
 
@@ -37,6 +38,10 @@ impl RequestId {
         Ok(Self(String::from(s)))
     }
 
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.as_bytes().to_vec()
+    }
+
     pub fn unknown() -> Self {
         Self("unknown".into())
     }
@@ -45,6 +50,21 @@ impl RequestId {
 impl fmt::Display for RequestId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SerializableRequestContext {
+    pub id: Vec<u8>,
+    pub total_records: usize,
+}
+
+impl SerializableRequestContext {
+    pub fn to_request_context(self) -> RequestContext {
+        RequestContext {
+            id: RequestId::from_bytes(self.id.as_slice()).expect("couldn't generate RequestId"),
+            total_records: self.total_records
+        }
     }
 }
 
@@ -65,6 +85,13 @@ impl RequestContext {
         RequestContext {
             id,
             total_records: 1,
+        }
+    }
+
+    pub fn to_serializable_request_context(&self) -> SerializableRequestContext {
+        SerializableRequestContext {
+            id: self.id.to_bytes(),
+            total_records: self.total_records,
         }
     }
 }

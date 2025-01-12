@@ -1,6 +1,3 @@
-//! A simple program that takes a number `n` as input, and writes the `n-1`th and `n`th fibonacci
-//! number as an output.
-
 // These two lines are necessary for the program to properly compile.
 //
 // Under the hood, we wrap your main function with some extra code so that it behaves properly
@@ -8,24 +5,43 @@
 #![no_main]
 sp1_zkvm::entrypoint!(main);
 
+use futures::executor::block_on;
+use sha2::Digest;
+use sha2::Sha256;
 use alloy_sol_types::SolType;
-use fibonacci_lib::{fibonacci, PublicValuesStruct};
-use sp1_sdk::{include_elf, utils, ProverClient, SP1Stdin, SP1ProofWithPublicValues};
+use doprf::prf::{SerializableQueryStateSet, HashPart};
+use doprf::party::KeyserverId;
+use doprf::tagged::TaggedHash;
+use packed_ristretto::datatype::PackedRistrettos;
+use shared_types::requests::SerializableRequestContext;
+use doprf_client::operations::incorporate_responses_and_hash;
 
 pub fn main() {
-    // Read an input to the program.
-    //
-    // Behind the scenes, this compiles down to a custom system call which handles reading inputs
-    // from the prover.
-    let n = sp1_zkvm::io::read::<u32>();
+    // Read the verification keys.
+    let vkeys = sp1_zkvm::io::read::<Vec<[u32; 8]>>();
 
-    // Compute the n'th fibonacci number using a function from the workspace lib crate.
-    let (a, b) = fibonacci(n);
+    // Read the public values.
+    let public_values = sp1_zkvm::io::read::<Vec<Vec<u8>>>();
 
-    // Encode the public values of the program.
-    let bytes = PublicValuesStruct::abi_encode(&PublicValuesStruct { n, a, b });
+    let querystate = sp1_zkvm::io::read::<SerializableQueryStateSet>().to_query_state_set();
+    let keyserver_responses = sp1_zkvm::io::read::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>();
+    let request_ctx = sp1_zkvm::io::read::<SerializableRequestContext>().to_request_context();
 
-    // Commit to the public values of the program. The final proof will have a commitment to all the
-    // bytes that were committed to.
-    sp1_zkvm::io::commit_slice(&bytes);
-}
+    // Verify the proofs.
+    assert_eq!(vkeys.len(), public_values.len());
+    for i in 0..vkeys.len() {
+        let vkey = &vkeys[i];
+        let public_values = &public_values[i];
+        let public_values_digest = Sha256::digest(public_values);
+        sp1_zkvm::lib::verify::verify_sp1_proof(vkey, &public_values_digest.into());
+    }
+
+    // Indicate that the proofs verified successfully
+    sp1_zkvm::io::commit(&true);
+
+    let hashed: PackedRistrettos<TaggedHash> =
+        block_on(incorporate_responses_and_hash(&request_ctx, querystate, keyserver_responses)).expect("failed");
+    
+    sp1_zkvm::io::commit::<PackedRistrettos<TaggedHash>>(&hashed);
+    
+    }

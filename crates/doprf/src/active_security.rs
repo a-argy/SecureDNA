@@ -226,6 +226,34 @@ impl Display for InvalidSecretAndKeyshareInput {
 }
 
 /// Randomised target is a modification of the established target
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SerializableRandomizedTarget {
+    random_modifier: [u8; 32],
+    target: [u8; 32],
+    commitments: Vec<[u8; 32]>,
+}
+
+impl SerializableRandomizedTarget {
+    pub fn to_randomized_target(&self) -> RandomizedTarget {
+        RandomizedTarget {
+            random_modifier: Scalar::from_canonical_bytes(self.random_modifier).unwrap_or_else(|| panic!("Invalid scalar!")),
+            // JUMP
+            target: Target(CompressedRistretto::from_slice(&self.target).expect("couldn't get bytes").decompress().expect("couldn't decompress")),
+            commitments: self.commitments
+            .iter()
+            .map(|c| {
+                CompressedRistretto::from_slice(c)
+                    .expect("couldn't get bytes")
+                    .decompress()
+                    .expect("couldn't decompress")
+            })
+            .collect(),
+        }
+    }
+}
+
+/// Randomised target is a modification of the established target
+// JUMP
 #[derive(Debug, Clone, Default)]
 pub struct RandomizedTarget {
     random_modifier: Scalar,
@@ -234,6 +262,14 @@ pub struct RandomizedTarget {
 }
 
 impl RandomizedTarget {
+    pub fn to_serializable_randomized_target(&self) -> SerializableRandomizedTarget {
+        SerializableRandomizedTarget {
+            random_modifier: self.random_modifier.to_bytes(),
+            target: *self.target.0.compress().as_bytes(),
+            commitments: self.commitments.iter().map(|c| *c.compress().as_bytes()).collect(),
+        }
+    }
+
     pub fn get_checksum_point_for_validation(&self, point_sum: &RistrettoPoint) -> RistrettoPoint {
         RISTRETTO_BASEPOINT_POINT * self.random_modifier - point_sum
     }

@@ -27,7 +27,7 @@ tokio = { version = "1", default-features = false }
 tracing = { workspace = true }
 
 certificates = { path = "../certificates" }
-doprf = { path = "../doprf" }
+doprf = { path = "../doprf", features = ["sp1"] }
 http_client = { path = "../http_client" }
 packed_ristretto = { path = "../packed_ristretto", default-features = false }
 quickdna = { workspace = true, default-features = false }

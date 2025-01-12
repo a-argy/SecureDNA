@@ -12,8 +12,8 @@ use crate::server_version_handler::LastServerVersionHandler;
 use crate::windows::Windows;
 use certificates::{ExemptionTokenGroup, TokenBundle};
 use doprf::active_security::ActiveSecurityKey;
-use doprf::party::KeyserverIdSet;
-use doprf::prf::Query;
+use doprf::party::{KeyserverIdSet, KeyserverId};
+use doprf::prf::{Query, QueryStateSet, SerializableQueryStateSet, HashPart};
 use doprf::tagged::{HashTag, TaggedHash};
 use http_client::BaseApiClient;
 use packed_ristretto::{PackableRistretto, PackedRistrettos};
@@ -24,6 +24,7 @@ use shared_types::hash::HashSpec;
 use shared_types::hdb::HdbScreeningResult;
 use shared_types::requests::RequestContext;
 use shared_types::requests::RequestId;
+use shared_types::requests::SerializableRequestContext;
 use shared_types::synthesis_permission::Region;
 use tracing::{debug, info};
 use sp1_sdk::{
@@ -281,7 +282,7 @@ impl<'a, S> DoprfClient<'a, S> {
     /// Connect to the chosen keyservers to hash the given windows.
     async fn hash<R>(&self, windows: &DoprfWindows) -> Result<PackedRistrettos<R>, DoprfError>
     where
-        R: From<TaggedHash> + PackableRistretto + 'static,
+        R: From<TaggedHash> + PackableRistretto + 'static + std::fmt::Debug,
         <R as PackableRistretto>::Array: Send + 'static,
     {
         if windows.combined_windows.is_empty() {
@@ -330,12 +331,16 @@ impl<'a, S> DoprfClient<'a, S> {
 
         // Write the proofs.
         //
-        // Note: this data will not actually be read by the aggregation program, instead it will be
+        // Note: this data will not directly read by the aggregation program, instead it will be
         // witnessed by the prover during the recursive aggregation process inside SP1 itself.
         for input in inputs {
             let SP1Proof::Compressed(proof) = input.proof.proof else { panic!() };
             stdin.write_proof(*proof, input.vk.vk);
         }
+
+        stdin.write::<SerializableQueryStateSet>(&querystate.to_serializable_set());
+        stdin.write::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>(&keyserver_responses);
+        stdin.write::<SerializableRequestContext>(&self.config.request_ctx.to_serializable_request_context());
 
         // FOR DEBUGGING: Execute the verification_proof program using the `ProverClient.execute` method,
         let (mut public_values, execution_report) = client.execute(VERIFICATION_ELF, stdin.clone()).run().unwrap();
@@ -343,6 +348,10 @@ impl<'a, S> DoprfClient<'a, S> {
             "Verification program executed with {} cycles",
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
+
+        let verified_status = public_values.read::<bool>();
+        let tagged_hash = public_values.read::<PackedRistrettos<TaggedHash>>();
+
 
         // // PROOF GENERATION: Generate the proof for the given program and input
         // let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
@@ -361,8 +370,15 @@ impl<'a, S> DoprfClient<'a, S> {
         // client.verify(&deserialized_verification_proof, &verification_vk).expect("verification failed");
         // println!("successfully generated and verified hash proof for the program!");
 
-        incorporate_responses_and_hash(self.config.request_ctx, querystate, keyserver_responses)
-            .await
+        let local_tagged_hash: PackedRistrettos<R> = incorporate_responses_and_hash(self.config.request_ctx, querystate, keyserver_responses)
+            .await?;
+
+        println!("here");
+        println!("Verified status: {}", verified_status);
+        println!("tagged_hash from program: {:?}", tagged_hash);
+        println!("locally computed tagged_hash: {:?}", local_tagged_hash);
+
+        Ok(local_tagged_hash)
     }
 }
 

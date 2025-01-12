@@ -29,7 +29,7 @@ use rand::{CryptoRng, RngCore};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use sha3::Sha3_512;
 
-use crate::active_security::{ActiveSecurityKey, RandomizedTarget};
+use crate::active_security::{ActiveSecurityKey, RandomizedTarget, SerializableRandomizedTarget};
 #[cfg(any(feature = "centralized_keygen", test))]
 use crate::lagrange::evaluate_lagrange_polynomial;
 use crate::party::{KeyserverId, KeyserverIdSet};
@@ -170,6 +170,31 @@ impl QueryState {
             (CompletedHashValue::from_rp(result), verifier)
         })
     }
+
+    /// Convert this `QueryState` into a `SerializableQueryState`.
+    pub fn to_serializable(&self) -> SerializableQueryState {
+        SerializableQueryState {
+            required_keyholders: self.required_keyholders,
+            blinding_factor: self.blinding_factor.to_bytes(),
+            verification_factor: self.verification_factor.to_bytes(),
+            query: self.query,
+            // or query: self.query.0.to_bytes(),
+            responses: self.responses
+                .iter()
+                .map(|(k, part)| (*k, part.0.to_bytes()))
+                .collect(),
+        }
+    }
+}
+
+/// A version of QueryState suitable for serialization.
+#[derive(Serialize, Deserialize)]
+pub struct SerializableQueryState {
+    required_keyholders: usize,
+    blinding_factor: [u8; 32],
+    verification_factor: [u8; 32],
+    query: Query,
+    responses: Vec<(KeyserverId, [u8; 32])>,
 }
 
 #[derive(Debug, Clone)]
@@ -204,9 +229,42 @@ impl fmt::Display for QueryError {
 /// An input to the aggregation program.
 ///
 /// Consists of a proof and a verification key.
+#[cfg(feature = "sp1")]
 pub struct VerificationInput {
     pub proof: SP1ProofWithPublicValues,
     pub vk: SP1VerifyingKey,
+}
+
+// Added this struct for serialization of QueryStateSet
+#[derive(Serialize, Deserialize)]
+pub struct SerializableQueryStateSet {
+    querystates: Vec<([u8; 4], SerializableQueryState)>,
+    randomized_target: SerializableRandomizedTarget,
+}
+
+impl SerializableQueryStateSet {
+    /// Converts this serializable set back into a `QueryStateSet`.
+    pub fn to_query_state_set(&self) -> QueryStateSet {
+        QueryStateSet {
+            querystates: self.querystates
+                .iter()
+                .map(|(tag, sqs)| {
+                    let query_state = QueryState {
+                        required_keyholders: sqs.required_keyholders,
+                        blinding_factor: Scalar::from_bytes_mod_order(sqs.blinding_factor),
+                        verification_factor: Scalar::from_bytes_mod_order(sqs.verification_factor),
+                        query: sqs.query.clone(),
+                        responses: sqs.responses
+                            .iter()
+                            .map(|(k, part)| (*k, HashPart(CompressedRistretto::from_slice(part).expect("couldn't read bytes"))))
+                            .collect(),
+                    };
+                    (Some(HashTag::from_bytes(*tag)), query_state)
+                })
+                .collect(),
+            randomized_target: self.randomized_target.to_randomized_target(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -509,6 +567,18 @@ impl QueryStateSet {
             })
             .map(|(id, _)| id)
             .collect()
+    }
+
+    /// Creates a new serializable version of this set.
+    //JUMP
+    pub fn to_serializable_set(&self) -> SerializableQueryStateSet {
+        SerializableQueryStateSet {
+            querystates: self.querystates
+                .iter()
+                .map(|(tag, qs)| (*tag.unwrap_or_default().as_bytes(), qs.to_serializable()))
+                .collect(),
+            randomized_target: self.randomized_target.to_serializable_randomized_target(),
+        }
     }
 }
 
