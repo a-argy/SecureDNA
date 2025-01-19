@@ -1989,6 +1989,7 @@ dependencies = [
  "hdb",
  "hdbserver",
  "http_client",
+ "incorporate",
  "js-sys",
  "keyserver",
  "minhttp",
@@ -3703,6 +3704,47 @@ checksum = "7cab85a7ed0bd5f0e76d93846e0147172bed2e2d3f859bcc33a8d9699cad1a75"
 dependencies = [
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "incorporate"
+version = "1.0.8"
+dependencies = [
+ "again",
+ "async-trait",
+ "bytes",
+ "certificates",
+ "clap",
+ "dns-parser",
+ "doprf",
+ "futures",
+ "futures-timer",
+ "getrandom",
+ "hdb",
+ "hdbserver",
+ "http_client",
+ "js-sys",
+ "keyserver",
+ "minhttp",
+ "packed_ristretto",
+ "pipeline_bridge",
+ "quickcheck",
+ "quickdna",
+ "rand",
+ "scep",
+ "scep_client_helpers",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "shared_types",
+ "streamed_ristretto",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

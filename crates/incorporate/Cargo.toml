@@ -1,5 +1,5 @@
 [package]
-name = "doprf_client"
+name = "incorporate"
 version = { workspace = true }
 publish = { workspace = true }
 license = { workspace = true }
@@ -8,11 +8,8 @@ edition = "2021"
 [features]
 default = ["centralized_keygen"]
 centralized_keygen = []
-sp1 = ["sp1-sdk"]
 
 [dependencies]
-# SP1 'script dependencies'
-sp1-sdk = { version = "3.0.0", optional = true}
 again = { workspace = true }
 async-trait = "0.1.73"
 bytes = "1"
@@ -28,21 +25,20 @@ tokio = { version = "1", default-features = false }
 tracing = { workspace = true }
 
 certificates = { path = "../certificates" }
-incorporate = { path = "../incorporate", default-features = false}
 doprf = { path = "../doprf", default-features = false}
-http_client = { path = "../http_client", default-features = false}
+# http_client = { path = "../http_client", default-features = false}
 packed_ristretto = { path = "../packed_ristretto", default-features = false }
 quickdna = { workspace = true, default-features = false }
 scep = { path = "../scep" }
-scep_client_helpers = { path = "../scep_client_helpers" }
+# scep_client_helpers = { path = "../scep_client_helpers" }
 shared_types = { path = "../shared_types" }
 streamed_ristretto = { path = "../streamed_ristretto" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-reqwest = { version = "0.12.5", features = ["cookies", "json"] }
-tokio = { version = "1", default-features = false, features = ["full"] }
+# reqwest = { version = "0.12.5", features = ["cookies", "json"] }
+# tokio = { version = "1", default-features = false, features = ["full"] }
 
-streamed_ristretto = { path = "../streamed_ristretto", features = ["reqwest"] }
+# streamed_ristretto = { path = "../streamed_ristretto", features = ["reqwest"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 futures-timer = { version = "3.0.2", features = ["wasm-bindgen"] }
@@ -60,7 +56,7 @@ wasm-bindgen = { version = "0.2.87" }
 wasm-bindgen-futures = { version = "0.4.37" }
 web-sys = { version = "0.3.64", features = ["console", "MessagePort"] }
 
-doprf = { path = "../doprf", features = ["wasm"] }
+doprf = { path = "../doprf", default-features = false, features = ["wasm"] }
 streamed_ristretto = { path = "../streamed_ristretto", features = ["web-sys"] }
 
 [dev-dependencies]
@@ -77,8 +73,3 @@ quickdna = { workspace = true, default-features = false, features = [
 ] }
 tracing.workspace = true
 tracing-subscriber = "0.3.18"
-
-# added build dependencies
-[build-dependencies]
-sp1-helper = "3.0.0"
-sp1-build = "3.0.0"

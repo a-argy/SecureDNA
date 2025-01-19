@@ -14,17 +14,20 @@ use doprf::party::KeyserverId;
 use doprf::tagged::TaggedHash;
 use packed_ristretto::datatype::PackedRistrettos;
 use shared_types::requests::SerializableRequestContext;
-use doprf_client::operations::incorporate_responses_and_hash;
+use incorporate::incorporate::incorporate_responses_and_hash;
 
 pub fn main() {
     // Read the verification keys.
+    println!("at the top of main");
     let vkeys = sp1_zkvm::io::read::<Vec<[u32; 8]>>();
 
     // Read the public values.
     let public_values = sp1_zkvm::io::read::<Vec<Vec<u8>>>();
 
     let querystate = sp1_zkvm::io::read::<SerializableQueryStateSet>().to_query_state_set();
+    println!("first deserailze worked");
     let keyserver_responses = sp1_zkvm::io::read::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>();
+    println!("second deserailze worked");
     let request_ctx = sp1_zkvm::io::read::<SerializableRequestContext>().to_request_context();
 
     // Verify the proofs.
@@ -37,11 +40,11 @@ pub fn main() {
     }
 
     // Indicate that the proofs verified successfully
-    sp1_zkvm::io::commit(&true);
+    sp1_zkvm::io::commit::<bool>(&true);
 
-    let hashed: PackedRistrettos<TaggedHash> =
-        block_on(incorporate_responses_and_hash(&request_ctx, querystate, keyserver_responses)).expect("failed");
+    // let hashed: PackedRistrettos<TaggedHash> =
+    //     block_on(incorporate_responses_and_hash(&request_ctx, querystate, keyserver_responses)).expect("failed");
     
-    sp1_zkvm::io::commit::<PackedRistrettos<TaggedHash>>(&hashed);
+    // sp1_zkvm::io::commit::<PackedRistrettos<TaggedHash>>(&hashed);
     
     }

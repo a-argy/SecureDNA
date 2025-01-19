@@ -6,13 +6,16 @@ use std::sync::Arc;
 use crate::error::DoprfError;
 use crate::instant::get_now;
 use crate::operations::{incorporate_responses_and_hash, make_keyserver_querysets};
+// use crate::operations::{make_keyserver_querysets};
 use crate::scep_client::{ClientConfig, HdbClient, KeyserverSetClient};
 use crate::server_selection::{ChosenSelectionSubset, SelectedKeyserver, ServerSelector};
 use crate::server_version_handler::LastServerVersionHandler;
 use crate::windows::Windows;
+// use incorporate::incorporate::{incorporate_responses_and_hash};
 use certificates::{ExemptionTokenGroup, TokenBundle};
 use doprf::active_security::ActiveSecurityKey;
 use doprf::party::{KeyserverIdSet, KeyserverId};
+#[cfg(feature = "sp1")]
 use doprf::prf::{Query, QueryStateSet, SerializableQueryStateSet, HashPart};
 use doprf::tagged::{HashTag, TaggedHash};
 use http_client::BaseApiClient;
@@ -27,6 +30,7 @@ use shared_types::requests::RequestId;
 use shared_types::requests::SerializableRequestContext;
 use shared_types::synthesis_permission::Region;
 use tracing::{debug, info};
+#[cfg(feature = "sp1")]
 use sp1_sdk::{
     include_elf, HashableKey, ProverClient, SP1Proof, SP1ProofWithPublicValues, SP1Stdin,
     SP1VerifyingKey,
@@ -280,6 +284,7 @@ impl<'a, S> DoprfClient<'a, S> {
     }
 
     /// Connect to the chosen keyservers to hash the given windows.
+    #[cfg(feature = "sp1")]
     async fn hash<R>(&self, windows: &DoprfWindows) -> Result<PackedRistrettos<R>, DoprfError>
     where
         R: From<TaggedHash> + PackableRistretto + 'static + std::fmt::Debug,
@@ -337,6 +342,12 @@ impl<'a, S> DoprfClient<'a, S> {
             let SP1Proof::Compressed(proof) = input.proof.proof else { panic!() };
             stdin.write_proof(*proof, input.vk.vk);
         }
+
+        for (keyserver_id, packed) in &keyserver_responses {
+            let serialized = packed.serialize();
+            println!("KeyserverId {:?} serialized: {:?}", keyserver_id, serialized);
+        }
+
 
         stdin.write::<SerializableQueryStateSet>(&querystate.to_serializable_set());
         stdin.write::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>(&keyserver_responses);
