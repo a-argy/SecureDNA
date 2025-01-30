@@ -15,7 +15,6 @@ use crate::windows::Windows;
 use certificates::{ExemptionTokenGroup, TokenBundle};
 use doprf::active_security::ActiveSecurityKey;
 use doprf::party::{KeyserverIdSet, KeyserverId};
-#[cfg(feature = "sp1")]
 use doprf::prf::{Query, QueryStateSet, SerializableQueryStateSet, HashPart};
 use doprf::tagged::{HashTag, TaggedHash};
 use http_client::BaseApiClient;
@@ -30,7 +29,6 @@ use shared_types::requests::RequestId;
 use shared_types::requests::SerializableRequestContext;
 use shared_types::synthesis_permission::Region;
 use tracing::{debug, info};
-#[cfg(feature = "sp1")]
 use sp1_sdk::{
     include_elf, HashableKey, ProverClient, SP1Proof, SP1ProofWithPublicValues, SP1Stdin,
     SP1VerifyingKey,
@@ -284,7 +282,6 @@ impl<'a, S> DoprfClient<'a, S> {
     }
 
     /// Connect to the chosen keyservers to hash the given windows.
-    #[cfg(feature = "sp1")]
     async fn hash<R>(&self, windows: &DoprfWindows) -> Result<PackedRistrettos<R>, DoprfError>
     where
         R: From<TaggedHash> + PackableRistretto + 'static + std::fmt::Debug,
@@ -348,11 +345,11 @@ impl<'a, S> DoprfClient<'a, S> {
             println!("KeyserverId {:?} serialized: {:?}", keyserver_id, serialized);
         }
 
-
         stdin.write::<SerializableQueryStateSet>(&querystate.to_serializable_set());
         stdin.write::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>(&keyserver_responses);
         stdin.write::<SerializableRequestContext>(&self.config.request_ctx.to_serializable_request_context());
 
+        println!("step A")
         // FOR DEBUGGING: Execute the verification_proof program using the `ProverClient.execute` method,
         let (mut public_values, execution_report) = client.execute(VERIFICATION_ELF, stdin.clone()).run().unwrap();
         println!(
@@ -362,7 +359,6 @@ impl<'a, S> DoprfClient<'a, S> {
 
         let verified_status = public_values.read::<bool>();
         let tagged_hash = public_values.read::<PackedRistrettos<TaggedHash>>();
-
 
         // // PROOF GENERATION: Generate the proof for the given program and input
         // let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);

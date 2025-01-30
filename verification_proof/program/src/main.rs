@@ -14,9 +14,9 @@ use doprf::party::KeyserverId;
 use doprf::tagged::TaggedHash;
 use packed_ristretto::datatype::PackedRistrettos;
 use shared_types::requests::SerializableRequestContext;
-use incorporate::incorporate::incorporate_responses_and_hash;
+// use doprf_client::operations::incorporate_responses_and_hash;
 
-pub fn main() {
+pub fn main() -> () {
     // Read the verification keys.
     println!("at the top of main");
     let vkeys = sp1_zkvm::io::read::<Vec<[u32; 8]>>();
@@ -24,7 +24,7 @@ pub fn main() {
     // Read the public values.
     let public_values = sp1_zkvm::io::read::<Vec<Vec<u8>>>();
 
-    let querystate = sp1_zkvm::io::read::<SerializableQueryStateSet>().to_query_state_set();
+    let mut querystate = sp1_zkvm::io::read::<SerializableQueryStateSet>().to_query_state_set();
     println!("first deserailze worked");
     let keyserver_responses = sp1_zkvm::io::read::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>();
     println!("second deserailze worked");
@@ -42,9 +42,38 @@ pub fn main() {
     // Indicate that the proofs verified successfully
     sp1_zkvm::io::commit::<bool>(&true);
 
+    for (id, ks_pr) in keyserver_responses.into_iter() {
+        // Handle errors directly instead of using ?
+        let parts = match ks_pr.iter_decoded().collect::<Result<Vec<HashPart>, _>>() {
+            Ok(p) => p,
+            Err(e) => {
+                println!("Error decoding parts: {:?}", e);
+                return;
+            }
+        };
+        
+        // Handle incorporation errors directly
+        if let Err(e) = querystate.incorporate_response(id, &parts) {
+            println!("Error incorporating response: {:?}", e);
+            return;
+        }
+    }
+
+    // Calculate final hashes
+    let hash_values = match querystate.get_hash_values() {
+        Ok(values) => values,
+        Err(e) => {
+            println!("Error getting hash values: {:?}", e);
+            return;
+        }
+    };
+
+    let packed_hashes: PackedRistrettos<TaggedHash> = hash_values.into_iter().collect();
+    sp1_zkvm::io::commit::<PackedRistrettos<TaggedHash>>(&packed_hashes);
+}
+
     // let hashed: PackedRistrettos<TaggedHash> =
     //     block_on(incorporate_responses_and_hash(&request_ctx, querystate, keyserver_responses)).expect("failed");
     
     // sp1_zkvm::io::commit::<PackedRistrettos<TaggedHash>>(&hashed);
     
-    }
