@@ -55,6 +55,7 @@ pub fn make_keyserver_querysets(
     num_required_keyshares: usize,
     target: &ActiveSecurityKey,
 ) -> (QueryStateSet, Vec<VerificationInput>) {
+
     let now = get_now();
 
     assert!(!sequences.is_empty());

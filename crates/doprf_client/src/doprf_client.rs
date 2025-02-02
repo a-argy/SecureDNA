@@ -281,10 +281,9 @@ impl<'a, S> DoprfClient<'a, S> {
         )
     }
 
-    /// Connect to the chosen keyservers to hash the given windows.
     async fn hash<R>(&self, windows: &DoprfWindows) -> Result<PackedRistrettos<R>, DoprfError>
     where
-        R: From<TaggedHash> + PackableRistretto + 'static + std::fmt::Debug,
+        R: From<TaggedHash> + PackableRistretto + 'static,
         <R as PackableRistretto>::Array: Send + 'static,
     {
         if windows.combined_windows.is_empty() {
@@ -297,6 +296,7 @@ impl<'a, S> DoprfClient<'a, S> {
             .checked_add(1)
             .ok_or(DoprfError::SequencesTooBig)?;
 
+        // added 'inputs' return value for recursive proof
         let (querystate, inputs) = make_keyserver_querysets(
             self.config.request_ctx,
             &windows.combined_windows,
@@ -322,16 +322,16 @@ impl<'a, S> DoprfClient<'a, S> {
 
         let mut stdin = SP1Stdin::new();
 
-        // Write the verification keys.
+        // Write the verification keys: recursive proof
         let vkeys = inputs.iter().map(|input| input.vk.hash_u32()).collect::<Vec<_>>();
         stdin.write::<Vec<[u32; 8]>>(&vkeys);
 
-        // Write the public values.
+        // Write the public values: recursive proof
         let public_values_write =
             inputs.iter().map(|input| input.proof.public_values.to_vec()).collect::<Vec<_>>();
         stdin.write::<Vec<Vec<u8>>>(&public_values_write);
 
-        // Write the proofs.
+        // Write the proofs: recursive proof
         //
         // Note: this data will not directly read by the aggregation program, instead it will be
         // witnessed by the prover during the recursive aggregation process inside SP1 itself.
@@ -340,25 +340,17 @@ impl<'a, S> DoprfClient<'a, S> {
             stdin.write_proof(*proof, input.vk.vk);
         }
 
-        for (keyserver_id, packed) in &keyserver_responses {
-            let serialized = packed.serialize();
-            println!("KeyserverId {:?} serialized: {:?}", keyserver_id, serialized);
-        }
-
+        // Write values needed to incorporate responses and hash
         stdin.write::<SerializableQueryStateSet>(&querystate.to_serializable_set());
         stdin.write::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>(&keyserver_responses);
         stdin.write::<SerializableRequestContext>(&self.config.request_ctx.to_serializable_request_context());
 
-        println!("step A")
         // FOR DEBUGGING: Execute the verification_proof program using the `ProverClient.execute` method,
         let (mut public_values, execution_report) = client.execute(VERIFICATION_ELF, stdin.clone()).run().unwrap();
         println!(
             "Verification program executed with {} cycles",
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
-
-        let verified_status = public_values.read::<bool>();
-        let tagged_hash = public_values.read::<PackedRistrettos<TaggedHash>>();
 
         // // PROOF GENERATION: Generate the proof for the given program and input
         // let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
@@ -377,15 +369,25 @@ impl<'a, S> DoprfClient<'a, S> {
         // client.verify(&deserialized_verification_proof, &verification_vk).expect("verification failed");
         // println!("successfully generated and verified hash proof for the program!");
 
-        let local_tagged_hash: PackedRistrettos<R> = incorporate_responses_and_hash(self.config.request_ctx, querystate, keyserver_responses)
+        // Read the public values
+        let verified_status = public_values.read::<bool>();
+        println!("Verificationation Proof: Recursive proof return value --> {:?}", verified_status);
+        let proof_tagged_hash = public_values.read::<PackedRistrettos<TaggedHash>>();
+
+
+        let local_tagged_hash: PackedRistrettos<TaggedHash> = incorporate_responses_and_hash(self.config.request_ctx, querystate, keyserver_responses)
             .await?;
 
-        println!("here");
-        println!("Verified status: {}", verified_status);
-        println!("tagged_hash from program: {:?}", tagged_hash);
-        println!("locally computed tagged_hash: {:?}", local_tagged_hash);
+        if proof_tagged_hash.encoded_items() == local_tagged_hash.encoded_items() {
+            println!("Verificationation Proof: Incorporated responses match.");
+        } else {
+            println!("Verificationation Proof: Incorporated responses do not match.");
+        }
 
-        Ok(local_tagged_hash)
+        Ok(local_tagged_hash
+            .iter_decoded()
+            .map(|item| R::from(item.unwrap()))
+            .collect())
     }
 }
 

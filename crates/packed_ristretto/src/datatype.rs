@@ -53,7 +53,6 @@ impl<T: PackableRistretto> PackedRistrettos<T> {
         // if src.len() < 13 {
         //     return Err(DeserializeError::InvalidSize(src.len()));
         // }
-        println!("made it to the start");
 
         // first, split `src` into `checksummed_data` (everything but the last 4 bytes) and `checksum_bytes` (the last 4 bytes)
         // (it would be circular to checksum the checksum)
@@ -100,7 +99,6 @@ impl<T: PackableRistretto> PackedRistrettos<T> {
             .chunks_exact(T::SIZE)
             .map(|chunk| chunk.try_into().ok().unwrap())
             .collect();
-        println!("made it to the end");
         Ok(Self::new(buffer))
     }
 

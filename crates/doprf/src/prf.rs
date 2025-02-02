@@ -239,7 +239,7 @@ pub struct VerificationInput {
 #[derive(Serialize, Deserialize)]
 pub struct SerializableQueryStateSet {
     querystates: Vec<([u8; 4], SerializableQueryState)>,
-    randomized_target: SerializableRandomizedTarget,
+    pub randomized_target: SerializableRandomizedTarget,
 }
 
 impl SerializableQueryStateSet {
@@ -270,7 +270,7 @@ impl SerializableQueryStateSet {
 #[derive(Debug, Clone, Default)]
 pub struct QueryStateSet {
     querystates: Vec<(Option<HashTag>, QueryState)>,
-    randomized_target: RandomizedTarget,
+    pub randomized_target: RandomizedTarget,
 }
 
 impl QueryStateSet {
@@ -334,14 +334,14 @@ impl QueryStateSet {
         // Create a `ProverClient` method
         let client = ProverClient::new();
 
+        // DEBUGGING SECTION START
         // Execute the hash_proof program using the `ProverClient.execute` method,
         let (mut hash_public_values, execution_report) = client.execute(HASH_ELF, hash_stdin.clone()).run().unwrap();
         println!(
-            "Executed program with {} cycles",
+            "Hash program executed with {} cycles",
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
 
-        // DEBUGGING
         // Read the proof hashes from the output stream until sentinel value is reached
         let mut proof_quries = Vec::with_capacity(estimated_size);
         let sentinel = Query::sentinel();
@@ -354,14 +354,14 @@ impl QueryStateSet {
             proof_quries.push(read_val)
         }
 
-        //Extract only queries from querystatess states
-        let queries: Vec<Query> = querystates.iter().map(|(_, state)| state.query.clone()).collect();
+        // Extract only queries from querystates states
+        let local_queries: Vec<Query> = querystates.iter().map(|(_, state)| state.query.clone()).collect();
 
-        // confirm matching outputs, for debugging
-        if proof_quries == queries {
-            println!("hashes match");
+        // Confirm matching outputs, for debugging
+        if proof_quries == local_queries {
+            println!("Hash proof: Hashes match.");
         } else {
-            println!("hashes conflict");
+            println!("Hash proof: Hashes do not match.");
         }   
 
         // // Determine if the program is using the precompiles
@@ -369,42 +369,41 @@ impl QueryStateSet {
         //     println!("Syscall {code:?} was called {count} times");
         // }
 
-        // Generate the proof for the given program and input
+        // Read in previously generated proof to avoid unecessary computation
         let (hash_pk, hash_vk) = client.setup(HASH_ELF);
+        let deserialized_hash_proof =
+            SP1ProofWithPublicValues::load("/client/output/hash_proof-with-pis.bin").expect("loading proof failed");
+        let input_1 = VerificationInput {
+                proof: deserialized_hash_proof,
+                vk: hash_vk.clone(),
+        };
+        // DEBUGGING SECTION END
+
+        // // PROOF GENERATION SECTION START
+        // //Generate the proof for the given program and input
+        // let (hash_pk, hash_vk) = client.setup(HASH_ELF);
+
         // // Note that we use the "compressed" proof type, which is necessary for aggregation in SP1
         // let mut hash_proof = client.prove(&hash_pk, hash_stdin).compressed().run().expect("proving failed");
-        // println!("generated hash_proof");
+        // println!("Generated hash_proof");
 
         // // Verify proof and public values
         // client.verify(&hash_proof, &hash_vk).expect("verification failed");
 
-        // // Test a round trip of proof serialization and deserialization.
+        // // Save the proof to file
         // hash_proof.save("/client/output/hash_proof-with-pis.bin").expect("saving proof failed");
-        let deserialized_hash_proof =
-            SP1ProofWithPublicValues::load("/client/output/hash_proof-with-pis.bin").expect("loading proof failed");
-
-        // // Verify the deserialized proof.
-        // client.verify(&deserialized_hash_proof, &hash_vk).expect("verification failed");
-        // println!("successfully generated and verified hash proof for the program!");
 
         // // Create a VerificationInputs struct for the hash_proof
         // let input_1 = VerificationInput {
         //     proof: hash_proof,
-        //     vk: hash_vk,
+        //     vk: hash_vk.clone(),
         // };
+        // // PROOF GENERATION SECTION END
 
-        // NOTE: For now, we will use the deserialized proof for the hash_proof instead of re-generating
-        // Otherwise, uncomment the above code block
-        let input_1 = VerificationInput {
-            proof: deserialized_hash_proof,
-            vk: hash_vk,
-        };
-
-        // Generate checksum proof
         // Hash the concatenated queries (to be used as random_modifier)
         let hashed_concat_quries = Scalar::hash_from_bytes::<Sha3_512>(&concat_queries);
 
-        // write needed values to the input stream
+        // write needed values to the input stream of checksum proof
         checksum_stdin.write(&hashed_concat_quries.as_bytes());
         checksum_stdin.write(&active_security_key);
         checksum_stdin.write(&sum.compress().as_bytes());
@@ -415,62 +414,61 @@ impl QueryStateSet {
         let checksum = randomized_target.get_checksum_point_for_validation(&sum);
         let verification_factor_0 = Scalar::from(rng.gen_range(0u32..=verification_factor_max));
         let x_0 = checksum * verification_factor_0.invert();
-        let checksum_state = QueryState::from_rp(x_0, required_keyholders, verification_factor_0);
+        let local_checksum_state = QueryState::from_rp(x_0, required_keyholders, verification_factor_0);
 
         // write the remaining values to the input stream
         checksum_stdin.write(&verification_factor_0.as_bytes());
-        checksum_stdin.write(&checksum_state.blinding_factor.as_bytes());
+        checksum_stdin.write(&local_checksum_state.blinding_factor.as_bytes());
 
-        // Execute the program using the `ProverClient.execute` method, without generating a proof
+        // DEBUGGING SECTION START
+        // Execute the checksum_proof program using the `ProverClient.execute` method,
         let (mut checksum_public_values, execution_report) = client.execute(CHECKSUM_ELF, checksum_stdin.clone()).run().unwrap();
         println!(
-            "checksum program executed with {} cycles",
+            "Checksum program executed with {} cycles",
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
 
-        // DEBUGGING
         // Read the checksum_query that is generated in the program
-        let checksum_query = checksum_public_values.read::<Query>();
+        let proof_checksum_query = checksum_public_values.read::<Query>();
 
         // Confirm this output maches the query generated locally
-        if checksum_state.query.clone() == checksum_query {
-            println!("checksum matches");
+        if local_checksum_state.query.clone() == proof_checksum_query {
+            println!("Checksum proof: Checksums match.");
         } else {
-            println!("checksum doesn't match");
+            println!("Checksum proof: Checksums do not match.");
         }
- 
-        // Note: required secureDNA line
-        querystates.push((None, checksum_state));
 
-        // Generate the proof for the given program and input
+        // Read in previously generated proof to avoid unecessary computation
         let (checksum_pk, checksum_vk) = client.setup(CHECKSUM_ELF);
+        let deserialized_checksum_proof =
+            SP1ProofWithPublicValues::load("/client/output/checksum-proof-with-pis.bin").expect("loading proof failed");
+        let input_2 = VerificationInput {
+            proof: deserialized_checksum_proof,
+            vk: checksum_vk.clone(),
+        };
+        // DEBUGGING SECTION END
+
+        // Note: required secureDNA line, after check to not be consumed, DO NOT ALTER
+        querystates.push((None, local_checksum_state));
+
+        // // PROOF GENERATION SECTION START
+        // // Generate the proof for the given program and input
+        // let (checksum_pk, checksum_vk) = client.setup(CHECKSUM_ELF);
         // let mut checksum_proof = client.prove(&checksum_pk, checksum_stdin).compressed().run().expect("proving failed");
-        // println!("generated checksum_proof");
+        // println!("Generated checksum_proof");
 
         // // Verify proof and public values
         // client.verify(&checksum_proof, &checksum_vk).expect("verification failed");
 
-        // // Test a round trip of proof serialization and deserialization.
+        // // Save the proof to file
         // checksum_proof.save("/client/output/checksum-proof-with-pis.bin").expect("saving proof failed");
-        let deserialized_checksum_proof =
-            SP1ProofWithPublicValues::load("/client/output/checksum-proof-with-pis.bin").expect("loading proof failed");
-
-        // // Verify the deserialized proof.
-        // client.verify(&deserialized_checksum_proof, &checksum_vk).expect("verification failed");
-        // println!("successfully generated and verified checksum proof for the program!");
 
         // // Create a VerificationInputs struct for the checksum_proof
         // let input_2 = VerificationInput {
         //     proof: checksum_proof,
-        //     vk: checksum_vk,
+        //     vk: checksum_vk.clone(),
         // };
-
-        // NOTE: For now, we will use the deserialized proof for the checksum_proof instead of re-generating
-        // Otherwise, uncomment the above code block
-        let input_2 = VerificationInput {
-            proof: deserialized_checksum_proof,
-            vk: checksum_vk,
-        };
+        // // PROOF GENERATION SECTION END
 
         // Create the a vector of VerificationInputs
         let inputs = vec![input_1, input_2];

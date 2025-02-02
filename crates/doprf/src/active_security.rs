@@ -228,16 +228,19 @@ impl Display for InvalidSecretAndKeyshareInput {
 /// Randomised target is a modification of the established target
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SerializableRandomizedTarget {
-    random_modifier: [u8; 32],
+    pub random_modifier: [u8; 32],
     target: [u8; 32],
     commitments: Vec<[u8; 32]>,
 }
 
 impl SerializableRandomizedTarget {
     pub fn to_randomized_target(&self) -> RandomizedTarget {
+        let random_modifier = Scalar::from_canonical_bytes(self.random_modifier);
+        if random_modifier.is_none().into() {
+            panic!("Invalid scalar! {:?}", self.random_modifier);
+        }
         RandomizedTarget {
-            random_modifier: Scalar::from_canonical_bytes(self.random_modifier).unwrap_or_else(|| panic!("Invalid scalar!")),
-            // JUMP
+            random_modifier: random_modifier.unwrap(),            // JUMP
             target: Target(CompressedRistretto::from_slice(&self.target).expect("couldn't get bytes").decompress().expect("couldn't decompress")),
             commitments: self.commitments
             .iter()
@@ -256,7 +259,7 @@ impl SerializableRandomizedTarget {
 // JUMP
 #[derive(Debug, Clone, Default)]
 pub struct RandomizedTarget {
-    random_modifier: Scalar,
+    pub random_modifier: Scalar,
     target: Target,
     commitments: Vec<RistrettoPoint>,
 }
