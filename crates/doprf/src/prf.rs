@@ -10,7 +10,6 @@ use std::path::Path;
 // added packages for SP1 'Script'
 use std::env;
 use clap::Parser;
-#[cfg(feature = "sp1")]
 use sp1_sdk::{include_elf, utils, ProverClient, SP1Stdin, SP1ProofWithPublicValues, SP1VerifyingKey};
 
 use std::collections::BTreeMap;
@@ -229,7 +228,8 @@ impl fmt::Display for QueryError {
 /// An input to the aggregation program.
 ///
 /// Consists of a proof and a verification key.
-#[cfg(feature = "sp1")]
+// #[cfg(feature = "sp1")]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct VerificationInput {
     pub proof: SP1ProofWithPublicValues,
     pub vk: SP1VerifyingKey,

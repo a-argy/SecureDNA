@@ -1007,9 +1007,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
+checksum = "f61dac84819c6588b558454b194026eb1f09c293b9036ae9b159e74e73ab6cf9"
 dependencies = [
  "serde",
 ]
@@ -2597,40 +2597,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
-name = "fibonacci-lib"
-version = "0.1.0"
-dependencies = [
- "alloy-sol-types",
-]
-
-[[package]]
-name = "fibonacci-program"
-version = "0.1.0"
-dependencies = [
- "alloy-sol-types",
- "curve25519-dalek",
- "doprf",
- "fibonacci-lib",
- "sha3",
- "sp1-zkvm",
-]
-
-[[package]]
-name = "fibonacci-script"
-version = "0.1.0"
-dependencies = [
- "alloy-sol-types",
- "clap",
- "fibonacci-lib",
- "hex",
- "serde",
- "serde_json",
- "sp1-helper",
- "sp1-sdk",
- "tracing",
-]
-
-[[package]]
 name = "fixed-hash"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3184,6 +3150,7 @@ dependencies = [
  "hyper 1.5.2",
  "minhttp",
  "once_cell",
+ "packed_ristretto",
  "persistence",
  "pin-project",
  "reqwest 0.12.9",
@@ -3195,6 +3162,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "shared_types",
+ "sp1-sdk",
  "streamed_ristretto",
  "tempfile",
  "thiserror 1.0.69",
@@ -6324,6 +6292,7 @@ dependencies = [
  "once_cell",
  "packed_ristretto",
  "scep",
+ "serde",
  "serde_json",
  "shared_types",
  "thiserror 1.0.69",
@@ -7300,21 +7269,6 @@ dependencies = [
  "sysinfo",
  "thiserror 1.0.69",
  "tracing",
-]
-
-[[package]]
-name = "sp1-zkvm"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ea02449a9dcaab67219f7b3442ab51b45ae40e7b04f205382295936087fe1d5"
-dependencies = [
- "cfg-if",
- "getrandom",
- "lazy_static",
- "libm",
- "rand",
- "sha2",
- "sp1-lib",
 ]
 
 [[package]]

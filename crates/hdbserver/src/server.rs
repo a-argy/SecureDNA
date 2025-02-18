@@ -192,6 +192,7 @@ async fn respond(
     peer: SocketAddr,
     request: Request<Incoming>,
 ) -> GenericResponse {
+    println!("in respond");
     let request_id = RequestId::from(request.headers());
     let method = request.method().clone();
     let headers = request.headers().clone();

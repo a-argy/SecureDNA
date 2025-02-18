@@ -6,7 +6,7 @@ license = { workspace = true }
 edition = "2021"
 
 [features]
-default = ["centralized_keygen"]
+default = ["centralized_keygen", "sp1"]
 centralized_keygen = []
 wasm = ["getrandom/wasm-bindgen"]
 sp1 = ["sp1-sdk"]

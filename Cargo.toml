@@ -4,8 +4,6 @@ members = [
     "crates/wasm_bindings/certificates",
     "crates/wasm_bindings/quickdna",
     "crates/wasm_bindings/screening",
-    "hash_proof/program",
-    "hash_proof/script",
 ]
 resolver = "2"
 

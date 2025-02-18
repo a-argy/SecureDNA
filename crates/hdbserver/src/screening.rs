@@ -2,16 +2,22 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::sync::Arc;
-
+use tracing::debug;
 use anyhow::Context;
-use doprf::prf::CompletedHashValue;
+use doprf::prf::{CompletedHashValue, VerificationInput};
 use futures::{StreamExt, TryStreamExt};
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Full};
+use bytes::Bytes;
 use hyper::body::{Body, Incoming};
 use hyper::{Request, StatusCode};
 use scep::states::{EtState, ServerStateForClient};
 use scep::steps::{server_et_client, server_et_seq_hashes_client};
 use tracing::{error, info, warn};
+use packed_ristretto::PackedRistrettos;
+use sp1_sdk::{
+    include_elf, HashableKey, ProverClient, SP1Proof, SP1ProofWithPublicValues, SP1Stdin,
+    SP1VerifyingKey,
+};
 
 use certificates::Issued;
 use doprf::tagged::{HashTag, TaggedHash};
@@ -25,7 +31,7 @@ use shared_types::hdb::HdbScreeningResult;
 use shared_types::requests::RequestId;
 use shared_types::synthesis_permission::SynthesisPermission;
 use streamed_ristretto::hyper::{check_content_length, from_request};
-use streamed_ristretto::stream::{check_content_type, ShortErrorMsg, StreamableRistretto};
+use streamed_ristretto::stream::{check_content_type, ShortErrorMsg, StreamableRistretto, decode, encode};
 use streamed_ristretto::HasContentType;
 
 use crate::event_store;
@@ -77,6 +83,21 @@ pub async fn scep_endpoint_screen(
     hdbs_state: Arc<HdbServerState>,
     request: Request<Incoming>,
 ) -> Result<GenericResponse, scep::error::ScepError<scep::error::Screen>> {
+    #[derive(serde::Deserialize)]
+    struct RequestWithVerification {
+        ristretto_data: Vec<u8>,
+        verification: VerificationInput,
+    }
+
+    // check_content_type(request.headers(), TaggedHash::CONTENT_TYPE)
+    //     .context("in screen")
+    //     .map_err(scep::error::ScepError::InvalidMessage)?;
+
+    // Change this line
+    info!("Received screen request with ID: {}", request_id);
+    debug!("Content-Type: {:?}", request.headers().get("content-type"));
+    debug!("All Headers: {:?}", request.headers());
+    println!("made it here");
     check_content_type(request.headers(), TaggedHash::CONTENT_TYPE)
         .context("in screen")
         .map_err(scep::error::ScepError::InvalidMessage)?;
@@ -95,10 +116,59 @@ pub async fn scep_endpoint_screen(
     let client_mid = client_state.open_request().client_mid();
     let debug_info = client_state.open_request().debug_info;
 
-    let hash_count_from_content_len =
-        check_content_length(request.body().size_hint().exact(), TaggedHash::SIZE)
-            .context("in screen")
-            .map_err(scep::error::ScepError::InvalidMessage)?;
+    // Get size hint before consuming body
+    let content_length = request.body().size_hint().exact();
+    let hash_count_from_content_len = check_content_length(
+        content_length,
+        TaggedHash::SIZE
+    )
+    .context("in screen")
+    .map_err(scep::error::ScepError::InvalidMessage)?;
+
+
+    let num_hashes = check_content_length(request.body().size_hint().exact(), TaggedHash::SIZE)
+        .context("in screen")
+        .map_err(ScepError::InvalidMessage)?;
+    info!("{request_id}: Processing request of size {num_hashes}");
+
+
+    // Then consume body
+    let bytes = request
+        .into_body()
+        .collect()
+        .await
+        .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?
+        .to_bytes();
+
+    // Deserialize into our struct
+    let request_data: RequestWithVerification = serde_json::from_slice(&bytes)
+        .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?;
+    
+    // Build a fake request using the extracted bytes
+    let fake_request = Request::builder()
+        .header("Content-Type", TaggedHash::CONTENT_TYPE)
+        .body(Full::new(Bytes::from(request_data.ristretto_data.clone())))
+        .expect("failed to build fake request");
+
+    // Now extract the queries from this fake request
+    let queries = from_request::<_, UnparsedTaggedHash>(fake_request)
+        .context("in screen")
+        .map_err(ScepError::InvalidMessage)?;
+
+    const VERIFICATION_ELF: &[u8] = include_bytes!("../../../verification_proof/elf/riscv32im-succinct-zkvm-elf");
+
+    // Initialize the proving client.
+    let client = ProverClient::new();
+    // Setup the proving and verifying keys.
+    let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
+
+    // Extract verification components and verify
+    let VerificationInput { proof, vk } = request_data.verification;
+    client.verify(&proof, &vk).expect("verification failed");
+    println!("verification successful");
+
+    let hashes = PackedRistrettos::<TaggedHash>::deserialize(&request_data.ristretto_data)
+        .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?;
 
     let (params, client_state) =
         scep::steps::server_screen_client(hash_count_from_content_len, client_state)?;
@@ -139,15 +209,6 @@ pub async fn scep_endpoint_screen(
     if let Some(metrics) = &hdbs_state.metrics {
         metrics.requests.inc();
     }
-
-    let num_hashes = check_content_length(request.body().size_hint().exact(), TaggedHash::SIZE)
-        .context("in screen")
-        .map_err(ScepError::InvalidMessage)?;
-    info!("{request_id}: Processing request of size {num_hashes}");
-
-    let queries = from_request(request)
-        .context("in screen")
-        .map_err(ScepError::InvalidMessage)?;
 
     struct LogDone(RequestId);
 

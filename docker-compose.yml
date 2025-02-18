@@ -34,6 +34,7 @@ services:
       - "${TEST_CERTS_PATH:-./test/certs}:/certs/"
       - "${TEST_CFG_PATH:-./test/cfg}:/cfg/"
     environment:
+      "RUST_LOG": "debug"  # Add this line
       "SECUREDNA_CFG_PATH": "/cfg/database.toml"
   keyserver1:
     image: ghcr.io/securedna/keyserver:${SECUREDNA_TAG}

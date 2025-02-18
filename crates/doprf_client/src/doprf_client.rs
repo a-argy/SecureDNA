@@ -6,16 +6,14 @@ use std::sync::Arc;
 use crate::error::DoprfError;
 use crate::instant::get_now;
 use crate::operations::{incorporate_responses_and_hash, make_keyserver_querysets};
-// use crate::operations::{make_keyserver_querysets};
 use crate::scep_client::{ClientConfig, HdbClient, KeyserverSetClient};
 use crate::server_selection::{ChosenSelectionSubset, SelectedKeyserver, ServerSelector};
 use crate::server_version_handler::LastServerVersionHandler;
 use crate::windows::Windows;
-// use incorporate::incorporate::{incorporate_responses_and_hash};
 use certificates::{ExemptionTokenGroup, TokenBundle};
 use doprf::active_security::ActiveSecurityKey;
 use doprf::party::{KeyserverIdSet, KeyserverId};
-use doprf::prf::{Query, QueryStateSet, SerializableQueryStateSet, HashPart};
+use doprf::prf::{Query, QueryStateSet, SerializableQueryStateSet, HashPart, VerificationInput};
 use doprf::tagged::{HashTag, TaggedHash};
 use http_client::BaseApiClient;
 use packed_ristretto::{PackableRistretto, PackedRistrettos};
@@ -281,13 +279,13 @@ impl<'a, S> DoprfClient<'a, S> {
         )
     }
 
-    async fn hash<R>(&self, windows: &DoprfWindows) -> Result<PackedRistrettos<R>, DoprfError>
+    async fn hash<R>(&self, windows: &DoprfWindows) -> Result<(PackedRistrettos<R>, VerificationInput), DoprfError>
     where
         R: From<TaggedHash> + PackableRistretto + 'static,
         <R as PackableRistretto>::Array: Send + 'static,
     {
         if windows.combined_windows.is_empty() {
-            return Ok(PackedRistrettos::new(vec![]));
+            return Err(DoprfError::SequencesTooBig);
         }
 
         // add one for active security checksum
@@ -345,35 +343,18 @@ impl<'a, S> DoprfClient<'a, S> {
         stdin.write::<Vec<(KeyserverId, PackedRistrettos<HashPart>)>>(&keyserver_responses);
         stdin.write::<SerializableRequestContext>(&self.config.request_ctx.to_serializable_request_context());
 
-        // FOR DEBUGGING: Execute the verification_proof program using the `ProverClient.execute` method,
+        // DEBUGGING SECTION START
+        // Execute the verification_proof program using the `ProverClient.execute` method,
         let (mut public_values, execution_report) = client.execute(VERIFICATION_ELF, stdin.clone()).run().unwrap();
         println!(
             "Verification program executed with {} cycles",
             execution_report.total_instruction_count() + execution_report.total_syscall_count()
         );
 
-        // // PROOF GENERATION: Generate the proof for the given program and input
-        // let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
-        // let mut verification_proof = client.prove(&verification_pk, stdin).run().unwrap();
-        // println!("generated proof");
-
-        // // Verify proof and public values
-        // client.verify(&verification_proof, &verification_vk).expect("verification failed");
-
-        // // Test a round trip of proof serialization and deserialization.
-        // verification_proof.save("/client/output/verification_proof-with-pis.bin").expect("saving proof failed");
-        // let deserialized_verification_proof =
-        //     SP1ProofWithPublicValues::load("/client/output/verification_proof-with-pis.bin").expect("loading proof failed");
-
-        // // Verify the deserialized proof.
-        // client.verify(&deserialized_verification_proof, &verification_vk).expect("verification failed");
-        // println!("successfully generated and verified hash proof for the program!");
-
         // Read the public values
         let verified_status = public_values.read::<bool>();
         println!("Verificationation Proof: Recursive proof return value --> {:?}", verified_status);
         let proof_tagged_hash = public_values.read::<PackedRistrettos<TaggedHash>>();
-
 
         let local_tagged_hash: PackedRistrettos<TaggedHash> = incorporate_responses_and_hash(self.config.request_ctx, querystate, keyserver_responses)
             .await?;
@@ -381,13 +362,44 @@ impl<'a, S> DoprfClient<'a, S> {
         if proof_tagged_hash.encoded_items() == local_tagged_hash.encoded_items() {
             println!("Verificationation Proof: Incorporated responses match.");
         } else {
-            println!("Verificationation Proof: Incorporated responses do not match.");
+            println!("Verificationation Proof: Incorporated responses do not match.EDIT");
         }
+        println!("in h!!!!ash");
+        
+        let verification_proof = 
+            SP1ProofWithPublicValues::load("/client/output/verification_proof-with-pis.bin").expect("loading proof failed");
+        let hdb_verification_input = VerificationInput {
+            proof: verification_proof,
+            vk: verification_vk.clone(),
+        };
+        // DEBUGGING SECTION END
 
-        Ok(local_tagged_hash
+        // // PROOF GENERATION
+        // // Generate the proof for the given program and input
+        // let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
+        // let mut verification_proof = client.prove(&verification_pk, stdin).run().unwrap();
+        // println!("generated proof");
+
+        // // Verify proof and public values
+        // client.verify(&verification_proof, &verification_vk).expect("verification failed");
+
+        // // Save the proof to file
+        // verification_proof.save("/client/output/verification_proof-with-pis.bin").expect("saving proof failed");
+
+        // let local_tagged_hash: PackedRistrettos<TaggedHash> = incorporate_responses_and_hash(self.config.request_ctx, querystate, keyserver_responses)
+        //     .await?;
+
+        // let hdb_verification_input = VerificationInput {
+        //     proof: verification_proof,
+        //     vk: verification_vk.clone(),
+        // };
+        // // PROOF GENERATION SECTION END
+        let packed_ristrettos: PackedRistrettos<R> = local_tagged_hash
             .iter_decoded()
             .map(|item| R::from(item.unwrap()))
-            .collect())
+            .collect();
+
+        Ok((packed_ristrettos, hdb_verification_input))
     }
 }
 
@@ -400,6 +412,7 @@ where
     NLike: ToNucleotideLike + Copy + 'a,
     SliceN: AsRef<[NLike]>,
 {
+    println!("in process");
     let nucleotide_total_count = config.nucleotide_total_count()?;
 
     if nucleotide_total_count == 0 {
@@ -425,12 +438,12 @@ where
     }
 
     info!("{}: generated {} windows", client.id(), windows.count);
-    let hashes = client.hash(&windows).await?;
+    let (hashes, hdb_verification_input) = client.hash(&windows).await?;
 
     let mut response = match &client.config.ets {
         ets if !ets.is_empty() => {
             let et_windows = client.window(ets.iter().flat_map(|w| w.et.token.dna_sequences()))?;
-            let et_hashes = client.hash(&et_windows).await?;
+            let (et_hashes, _) = client.hash(&et_windows).await?;
             let now = get_now();
             let response = client
                 .hdb_client
@@ -442,7 +455,7 @@ where
         }
         _ => {
             let now = get_now();
-            let response = client.hdb_client.query(&hashes).await?;
+            let response = client.hdb_client.query(&hashes, hdb_verification_input).await?;
             let hdb_duration = now.elapsed();
             debug!("Querying HDB done. Took: {:.2?}", hdb_duration);
             response
