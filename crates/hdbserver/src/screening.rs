@@ -102,8 +102,9 @@ pub async fn scep_endpoint_screen(
         .context("in screen")
         .map_err(scep::error::ScepError::InvalidMessage)?;
 
+    println!("made it here 2");
     let cookie = scep_server_helpers::request::get_session_cookie(request.headers())?;
-
+    println!("made it here 3");
     let client_state = hdbs_state
         .scep
         .clients
@@ -113,9 +114,10 @@ pub async fn scep_endpoint_screen(
         .ok_or_else(|| {
             scep::error::ScepError::InvalidMessage(anyhow::anyhow!("unknown cookie {cookie}"))
         })?;
+    println!("made it here 4");
     let client_mid = client_state.open_request().client_mid();
     let debug_info = client_state.open_request().debug_info;
-
+    println!("made it here 5");
     // Get size hint before consuming body
     let content_length = request.body().size_hint().exact();
     let hash_count_from_content_len = check_content_length(
@@ -124,14 +126,14 @@ pub async fn scep_endpoint_screen(
     )
     .context("in screen")
     .map_err(scep::error::ScepError::InvalidMessage)?;
-
-
+    println!("made it here 7");
     let num_hashes = check_content_length(request.body().size_hint().exact(), TaggedHash::SIZE)
         .context("in screen")
         .map_err(ScepError::InvalidMessage)?;
     info!("{request_id}: Processing request of size {num_hashes}");
+    info!("tisesi re MALAK");
 
-
+    println!("made it here 8");
     // Then consume body
     let bytes = request
         .into_body()
@@ -139,24 +141,24 @@ pub async fn scep_endpoint_screen(
         .await
         .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?
         .to_bytes();
-
+    println!("made it here 9");
     // Deserialize into our struct
     let request_data: RequestWithVerification = serde_json::from_slice(&bytes)
         .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?;
-    
+    println!("made it here 10");
     // Build a fake request using the extracted bytes
     let fake_request = Request::builder()
         .header("Content-Type", TaggedHash::CONTENT_TYPE)
         .body(Full::new(Bytes::from(request_data.ristretto_data.clone())))
         .expect("failed to build fake request");
-
+    println!("made it here 11");
     // Now extract the queries from this fake request
     let queries = from_request::<_, UnparsedTaggedHash>(fake_request)
         .context("in screen")
         .map_err(ScepError::InvalidMessage)?;
-
+    println!("made it here 12");
     const VERIFICATION_ELF: &[u8] = include_bytes!("../../../verification_proof/elf/riscv32im-succinct-zkvm-elf");
-
+    println!("made it here 13");
     // Initialize the proving client.
     let client = ProverClient::new();
     // Setup the proving and verifying keys.

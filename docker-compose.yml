@@ -1,4 +1,3 @@
-version: '3'
 # SecureDNA env vars are picked up through `.env` in the repo root.
 
 x-environment: &keyserver-common-env
@@ -33,8 +32,9 @@ services:
       - "${TEST_HDB_PATH:-./data/hdb}:/data/hdb"
       - "${TEST_CERTS_PATH:-./test/certs}:/certs/"
       - "${TEST_CFG_PATH:-./test/cfg}:/cfg/"
+      - "./target/release/hdbserver:/usr/local/bin/hdbserver"   
+    entrypoint: ["/usr/local/bin/hdbserver"]  # Add this line  
     environment:
-      "RUST_LOG": "debug"  # Add this line
       "SECUREDNA_CFG_PATH": "/cfg/database.toml"
   keyserver1:
     image: ghcr.io/securedna/keyserver:${SECUREDNA_TAG}
