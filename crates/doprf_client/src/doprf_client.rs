@@ -364,7 +364,6 @@ impl<'a, S> DoprfClient<'a, S> {
         } else {
             println!("Verificationation Proof: Incorporated responses do not match.EDIT");
         }
-        println!("in h!!!!ash");
         
         let verification_proof = 
             SP1ProofWithPublicValues::load("/client/output/verification_proof-with-pis.bin").expect("loading proof failed");
@@ -412,7 +411,6 @@ where
     NLike: ToNucleotideLike + Copy + 'a,
     SliceN: AsRef<[NLike]>,
 {
-    println!("in process");
     let nucleotide_total_count = config.nucleotide_total_count()?;
 
     if nucleotide_total_count == 0 {

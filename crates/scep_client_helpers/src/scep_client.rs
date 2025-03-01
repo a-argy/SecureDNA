@@ -241,14 +241,13 @@ impl ScepClient<DatabaseTokenGroup> {
         hashes: &PackedRistrettos<TaggedHash>,
         hdb_verification_input: VerificationInput,
     ) -> Result<HdbScreeningResult, HttpError> {
-        println!("in screen_and_verify");
         #[derive(serde::Serialize)]
         struct RequestWithVerification {
             ristretto_data: Vec<u8>,
             verification: VerificationInput,
         }
 
-        let ristretto_data: Vec<_> = hashes
+        let ristretto_data: Vec<u8> = hashes
         .iter_encoded()
         .flatten()
         .copied()
@@ -261,7 +260,7 @@ impl ScepClient<DatabaseTokenGroup> {
 
         self.api_client
             .json_json_post(
-                &format!("{}{}", self.domain, scep::SCREEN_ENDPOINT),
+                &format!("{}{}", self.domain, scep::SCREEN_AND_VERIFY_ENDPOINT),
                 &request,
             )
             .await

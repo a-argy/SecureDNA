@@ -192,7 +192,6 @@ async fn respond(
     peer: SocketAddr,
     request: Request<Incoming>,
 ) -> GenericResponse {
-    println!("in respond");
     let request_id = RequestId::from(request.headers());
     let method = request.method().clone();
     let headers = request.headers().clone();
@@ -241,6 +240,22 @@ async fn respond(
                     &request_id,
                     peer,
                     crate::screening::scep_endpoint_screen(
+                        &request_id,
+                        hdbs_state.clone(),
+                        request,
+                    ),
+                ),
+            )
+            .await
+        }
+        scep::SCREEN_AND_VERIFY_ENDPOINT => {
+            handle_post(
+                &method,
+                handle_scep_err(
+                    &hdbs_state.metrics,
+                    &request_id,
+                    peer,
+                    crate::screening::scep_endpoint_screen_and_verify(
                         &request_id,
                         hdbs_state.clone(),
                         request,

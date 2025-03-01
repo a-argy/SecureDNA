@@ -93,7 +93,6 @@ impl BaseApiClient {
         url: &str,
         payload: &I,
     ) -> Result<O, HttpError> {
-        println!("in json_json_post");
         let body = serde_json::to_vec(payload).map_err(|e| HttpError::RequestError {
             ctx: format!("serializing payload for json_json_post to {url}"),
             status: None,

@@ -67,6 +67,7 @@ impl ApiClientCore {
 
         debug!("http_client: requesting {url}");
 
+        // a function from the Reqwest library
         let response = rb.send().await.map_err(|e| HttpError::RequestError {
             ctx: format!("requesting {url}"),
             status: None,

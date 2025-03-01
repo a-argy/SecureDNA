@@ -14,6 +14,7 @@ pub const OPEN_ENDPOINT: &str = "/scep/open";
 pub const AUTHENTICATE_ENDPOINT: &str = "/scep/authenticate";
 pub const KEYSERVE_ENDPOINT: &str = "/scep/keyserve";
 pub const SCREEN_ENDPOINT: &str = "/scep/screen";
+pub const SCREEN_AND_VERIFY_ENDPOINT: &str = "/scep/screen-and-verify";
 pub const SCREEN_WITH_EXEMPTION_ENDPOINT: &str = "/scep/screen-with-exemption";
 pub const EXEMPTION_ENDPOINT: &str = "/scep/exemption";
 pub const EXEMPTION_SEQ_HASHES_ENDPOINT: &str = "/scep/exemption-seq-hashes";

@@ -78,7 +78,7 @@ impl StreamableRistretto for UnparsedTaggedHash {
     }
 }
 
-pub async fn scep_endpoint_screen(
+pub async fn scep_endpoint_screen_and_verify(
     request_id: &RequestId,
     hdbs_state: Arc<HdbServerState>,
     request: Request<Incoming>,
@@ -89,22 +89,14 @@ pub async fn scep_endpoint_screen(
         verification: VerificationInput,
     }
 
-    // check_content_type(request.headers(), TaggedHash::CONTENT_TYPE)
-    //     .context("in screen")
-    //     .map_err(scep::error::ScepError::InvalidMessage)?;
-
-    // Change this line
-    info!("Received screen request with ID: {}", request_id);
-    debug!("Content-Type: {:?}", request.headers().get("content-type"));
-    debug!("All Headers: {:?}", request.headers());
-    println!("made it here");
-    check_content_type(request.headers(), TaggedHash::CONTENT_TYPE)
-        .context("in screen")
+    // Check content type for JSON
+    check_content_type(request.headers(), "application/json")
+        .context("in screen_and_verify")
         .map_err(scep::error::ScepError::InvalidMessage)?;
 
-    println!("made it here 2");
+    // Get session cookie
     let cookie = scep_server_helpers::request::get_session_cookie(request.headers())?;
-    println!("made it here 3");
+
     let client_state = hdbs_state
         .scep
         .clients
@@ -114,63 +106,37 @@ pub async fn scep_endpoint_screen(
         .ok_or_else(|| {
             scep::error::ScepError::InvalidMessage(anyhow::anyhow!("unknown cookie {cookie}"))
         })?;
-    println!("made it here 4");
     let client_mid = client_state.open_request().client_mid();
     let debug_info = client_state.open_request().debug_info;
-    println!("made it here 5");
-    // Get size hint before consuming body
-    let content_length = request.body().size_hint().exact();
-    let hash_count_from_content_len = check_content_length(
-        content_length,
-        TaggedHash::SIZE
-    )
-    .context("in screen")
-    .map_err(scep::error::ScepError::InvalidMessage)?;
-    println!("made it here 7");
-    let num_hashes = check_content_length(request.body().size_hint().exact(), TaggedHash::SIZE)
-        .context("in screen")
-        .map_err(ScepError::InvalidMessage)?;
-    info!("{request_id}: Processing request of size {num_hashes}");
-    info!("tisesi re MALAK");
 
-    println!("made it here 8");
-    // Then consume body
+    // Consume body and deserialize
     let bytes = request
         .into_body()
         .collect()
         .await
         .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?
         .to_bytes();
-    println!("made it here 9");
+
     // Deserialize into our struct
     let request_data: RequestWithVerification = serde_json::from_slice(&bytes)
         .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?;
-    println!("made it here 10");
-    // Build a fake request using the extracted bytes
-    let fake_request = Request::builder()
-        .header("Content-Type", TaggedHash::CONTENT_TYPE)
-        .body(Full::new(Bytes::from(request_data.ristretto_data.clone())))
-        .expect("failed to build fake request");
-    println!("made it here 11");
-    // Now extract the queries from this fake request
-    let queries = from_request::<_, UnparsedTaggedHash>(fake_request)
-        .context("in screen")
-        .map_err(ScepError::InvalidMessage)?;
-    println!("made it here 12");
-    const VERIFICATION_ELF: &[u8] = include_bytes!("../../../verification_proof/elf/riscv32im-succinct-zkvm-elf");
-    println!("made it here 13");
-    // Initialize the proving client.
-    let client = ProverClient::new();
-    // Setup the proving and verifying keys.
-    let (verification_pk, verification_vk) = client.setup(VERIFICATION_ELF);
 
-    // Extract verification components and verify
+    // Verify the proof
+    let client = ProverClient::new();
     let VerificationInput { proof, vk } = request_data.verification;
     client.verify(&proof, &vk).expect("verification failed");
-    println!("verification successful");
+    println!("HDB verification successful");
 
-    let hashes = PackedRistrettos::<TaggedHash>::deserialize(&request_data.ristretto_data)
-        .map_err(|e| scep::error::ScepError::InvalidMessage(e.into()))?;
+    // Build a fake request to mimic the form expected in scep_endpoint_screen, data is moved
+    let fake_request = Request::builder()
+    .header("Content-Type", TaggedHash::CONTENT_TYPE)
+    .body(Full::new(Bytes::from(request_data.ristretto_data)))
+    .expect("failed to build fake request");
+
+    let hash_count_from_content_len =
+        check_content_length(fake_request.body().size_hint().exact(), TaggedHash::SIZE)
+            .context("in screen")
+            .map_err(scep::error::ScepError::InvalidMessage)?;
 
     let (params, client_state) =
         scep::steps::server_screen_client(hash_count_from_content_len, client_state)?;
@@ -211,6 +177,229 @@ pub async fn scep_endpoint_screen(
     if let Some(metrics) = &hdbs_state.metrics {
         metrics.requests.inc();
     }
+
+    let num_hashes = check_content_length(fake_request.body().size_hint().exact(), TaggedHash::SIZE)
+        .context("in screen")
+        .map_err(ScepError::InvalidMessage)?;
+    info!("{request_id}: Processing request of size {num_hashes}");
+
+    let queries = from_request(fake_request)
+        .context("in screen_and_verify")
+        .map_err(ScepError::InvalidMessage)?;
+
+    struct LogDone(RequestId);
+
+    impl Drop for LogDone {
+        fn drop(&mut self) {
+            info!("{}: Done.", self.0);
+        }
+    }
+
+    let logdone = LogDone(request_id.clone());
+
+    let screen_evt_id = match event_store::insert_screen_event(
+        &hdbs_state.persistence_connection,
+        client_mid,
+        client_state.open_request.nucleotide_total_count,
+        region,
+        &ets,
+    )
+    .await
+    {
+        Ok(id) => Some(id),
+        Err(e) => {
+            error!("Failed to persist screen event for {client_mid}: {e}");
+            None
+        }
+    };
+
+    let mut last_record = None;
+    let hdbs_state2 = hdbs_state.clone();
+    let exemptions2 = exemptions.clone();
+    let hdb_responses: Result<Vec<_>, anyhow::Error> = queries
+        .map(move |query| {
+            let _permit = &permit;
+            let _logdone = &logdone;
+
+            let hash_id_and_query = query.map(|query: UnparsedTaggedHash| {
+                let hash_id = HashId::new(query.hash_tag(), last_record);
+                last_record = Some(hash_id.record);
+                (hash_id, query)
+            });
+
+            let hdbs_state2 = hdbs_state2.clone();
+            let exemptions2 = exemptions2.clone();
+            async move {
+                let (hash_id, query) = hash_id_and_query?;
+
+                let permit = hdbs_state2
+                    .hdb_queries
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .unwrap();
+                // TODO: Maybe use a nursery to prevent orphans, so long as that's not too expensive?
+                let hdbs_state3 = hdbs_state2.clone();
+                let exemptions3 = exemptions2.clone();
+                let resp = tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    let params = HdbParams {
+                        region,
+                        exemptions: &exemptions3,
+                    };
+                    let config = HdbConfig {
+                        database: &hdbs_state3.database,
+                        hlt: &hdbs_state3.hlt,
+                    };
+                    hdb::query_hdb(query.hash_bytes(), &params, &config)
+                })
+                .await
+                .unwrap()?;
+
+                // only incremented if there's no error
+                if let Some(metrics) = &hdbs_state2.metrics {
+                    metrics.hash_counter.inc();
+                }
+
+                Ok(resp.map(|r| (hash_id, r)))
+            }
+        })
+        .buffered(hdbs_state.parallelism_per_request)
+        .filter_map(|res| async { res.transpose() })
+        .try_collect()
+        .await;
+
+    let hdb_responses = match hdb_responses {
+        Ok(r) => r,
+        Err(err) => {
+            warn!("Error while processing HDB records: {err:?}");
+            if let Some(metrics) = &hdbs_state.metrics {
+                metrics.io_errors.inc();
+            }
+            return Ok(response::text(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal server error",
+            ));
+        }
+    };
+
+    let consolidation =
+        consolidate_windows(hdb_responses.into_iter(), &hdbs_state.hash_spec, debug_info)
+            .context("in screen consolidation")
+            .map_err(ScepError::InternalError)?;
+
+    let response: HdbScreeningResult = consolidation.to_hdb_screening_result(provider_reference);
+
+    let merged_permission =
+        SynthesisPermission::merge(response.results.iter().map(|r| r.synthesis_permission));
+    info!(
+        message = "screened",
+        %client_mid,
+        issued_to=client_state.open_request.cert_chain.token.issuer_description(),
+        screened_bp=client_state.open_request.nucleotide_total_count,
+        hash_count=hash_count_from_content_len,
+        %merged_permission,
+    );
+    if let Some(screen_evt_id) = screen_evt_id {
+        if let Err(e) = event_store::insert_screen_result(
+            &hdbs_state.persistence_connection,
+            screen_evt_id,
+            shared_types::synthesis_permission::SynthesisPermission::merge(
+                response.results.iter().map(|r| r.synthesis_permission),
+            ),
+        )
+        .await
+        {
+            error!(
+                "Failed to persist screening result for {}: {e}",
+                client_state.open_request.client_mid()
+            );
+        }
+    }
+
+    let json = serde_json::to_string(&response)
+        .context("in screen serialization")
+        .map_err(ScepError::InternalError)?;
+
+    Ok(response::json(StatusCode::OK, json))
+}
+
+pub async fn scep_endpoint_screen(
+    request_id: &RequestId,
+    hdbs_state: Arc<HdbServerState>,
+    request: Request<Incoming>,
+) -> Result<GenericResponse, scep::error::ScepError<scep::error::Screen>> {
+    check_content_type(request.headers(), TaggedHash::CONTENT_TYPE)
+        .context("in screen")
+        .map_err(scep::error::ScepError::InvalidMessage)?;
+
+    let cookie = scep_server_helpers::request::get_session_cookie(request.headers())?;
+
+    let client_state = hdbs_state
+        .scep
+        .clients
+        .write()
+        .await
+        .take_session(&cookie)
+        .ok_or_else(|| {
+            scep::error::ScepError::InvalidMessage(anyhow::anyhow!("unknown cookie {cookie}"))
+        })?;
+    let client_mid = client_state.open_request().client_mid();
+    let debug_info = client_state.open_request().debug_info;
+
+    let hash_count_from_content_len =
+        check_content_length(request.body().size_hint().exact(), TaggedHash::SIZE)
+            .context("in screen")
+            .map_err(scep::error::ScepError::InvalidMessage)?;
+
+    let (params, client_state) =
+        scep::steps::server_screen_client(hash_count_from_content_len, client_state)?;
+
+    let ScreenCommon {
+        region,
+        provider_reference,
+    } = params;
+
+    let permit = match hdbs_state.throttle_heavy_requests() {
+        Ok(permit) => permit,
+        Err(err_response) => return Ok(err_response),
+    };
+
+    let (ets, exemptions) = match client_state.et_state {
+        EtState::NoEt => (vec![], NO_EXEMPTIONS.clone()),
+        EtState::AwaitingEtSize | EtState::PromisedEt { .. } => {
+            return Err(scep::error::Screen::ScreenBeforeEt.into())
+        }
+        EtState::EtNeedsHashes { .. } => {
+            return Err(scep::error::Screen::ScreenBeforeEtHashes.into())
+        }
+        EtState::EtReady { ets, hashes } => {
+            let exemptions = exemptions_after_validation(
+                ets.clone(),
+                hashes.into_iter().collect(),
+                &hdbs_state.validator,
+                &hdbs_state.exemptions_roots,
+                &hdbs_state.scep.revocation_list,
+            )
+            .await
+            .map_err(|e| scep::error::Screen::EtValidation(e.to_string()))?;
+
+            (ets, Arc::new(exemptions))
+        }
+    };
+
+    if let Some(metrics) = &hdbs_state.metrics {
+        metrics.requests.inc();
+    }
+
+    let num_hashes = check_content_length(request.body().size_hint().exact(), TaggedHash::SIZE)
+        .context("in screen")
+        .map_err(ScepError::InvalidMessage)?;
+    info!("{request_id}: Processing request of size {num_hashes}");
+
+    let queries = from_request(request)
+        .context("in screen")
+        .map_err(ScepError::InvalidMessage)?;
 
     struct LogDone(RequestId);
 

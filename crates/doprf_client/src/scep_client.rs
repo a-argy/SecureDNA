@@ -89,7 +89,6 @@ impl HdbClient {
             .try_into()
             .map_err(|_| DoprfError::SequencesTooBig)?;
 
-        println!("in query");
         // Step 1: Authentication
         retry_with_timeout_and_mark_bad(
             || async {
@@ -101,12 +100,17 @@ impl HdbClient {
             &self.server.bad_flag,
         ).await?;
 
-        println!("in query2");
-        // Step 2: Actual screening query
+        // Step 2: Actual screening query (with verification)
         retry_with_timeout_and_mark_bad(
             || async { Ok(self.client.screen_and_verify(hashes, hdb_verification_input.clone()).await?) },
             &self.server.bad_flag,
         ).await
+
+        // // Step 2: Actual screening query (without verification)
+        // retry_with_timeout_and_mark_bad(
+        //     || async { Ok(self.client.screen(hashes).await?) },
+        //     &self.server.bad_flag,
+        // ).await
     }
 
     /// Post packed `CompletedHashValue`s to the HDB, and return the HDB response set
